@@ -1,0 +1,64 @@
+// Atlas RAG Agent: Prisma schema
+// Source documents (with authority/staleness metadata) and their
+// section-level chunks with Voyage AI embeddings in pgvector.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum DocumentStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+// One row per corpus file. effectiveDate is the source of truth for the
+// authority rule (docs/architecture.md); status is the fast path.
+model Document {
+  id             String         @id // frontmatter `id`, e.g. "uw-guidelines-cp-v3"
+  title          String
+  docType        String
+  lineOfBusiness String
+  version        String
+  effectiveDate  DateTime       @db.Date
+  status         DocumentStatus
+  sourcePath     String         @unique
+  contentHash    String // sha256 of the raw file, used to skip re-embedding unchanged docs
+
+  // Supersession is stored on the newer document. `supersededBy` is the
+  // back-relation, so the pair can never disagree in the database.
+  supersedesId String?   @unique
+  supersedes   Document? @relation("Supersession", fields: [supersedesId], references: [id])
+  supersededBy Document? @relation("Supersession")
+
+  chunks    Chunk[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One row per structural section (or continuation of a long section).
+model Chunk {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkIndex    Int // order within the document
+  sectionNumber String? // "2.2"; null for the document header block
+  sectionTitle  String // "Coastal Wind/Hail Zones (Tier 1 Counties)"
+  headingPath   String // "2. Binding Authority & TIV Limits > 2.2 Coastal Wind/Hail Zones (Tier 1 Counties)"
+  part          Int // 1-based; >1 means a continuation of an oversized section
+  partCount     Int
+  content       String
+  tokenEstimate Int
+
+  // voyage-4 at 1024 dims. Must match EMBEDDING_DIMENSIONS in src/ingestion/embeddings.ts.
+  embedding Unsupported("vector(1024)")?
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId, sectionNumber])
+}

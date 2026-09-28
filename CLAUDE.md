@@ -95,13 +95,27 @@ Dated, specific engagement log entries, not vague summaries.
 
 ## Current build status
 
-Session 1 of six complete: fictional corpus (corpus/, 7 documents,
-including a deliberately conflicting versioned pair to exercise the
-authority rule) and the decisions doc (docs/architecture.md — document
-authority/staleness rule, "not found" threshold, chunking strategy) are
-done. Not yet committed to git.
+Sessions 1-2 of six complete.
 
-Remaining build order: ingestion pipeline (chunking, Voyage AI
-embeddings, pgvector storage), agent + tool loop, trimmed eval suite
-(10-12 scenarios), deploy + demo script, docs + wrap. POC scope. The
-session workflow above is in effect.
+- Session 1 (committed on main): fictional corpus (corpus/, 7
+  documents, including a deliberately conflicting v2/v3 pair to
+  exercise the authority rule) and the decisions doc
+  (docs/architecture.md: authority/staleness rule, "not found"
+  threshold, chunking strategy).
+- Session 2 (branch `feat/ingestion-pipeline`): ingestion pipeline.
+  Local Postgres + pgvector via docker-compose on port 5433 (`npm run
+  db:up`), Prisma schema (Document with effectiveDate/status/
+  supersedes, Chunk with section metadata + `vector(1024)`), Zod env
+  guard that fails closed, structural chunker (46 chunks, one per
+  numbered section), Voyage `voyage-4` embeddings at 1024 dims,
+  hash-based idempotent seed (`npm run db:seed`, `--force` to
+  re-embed), and `npm run ingest:verify` for a retrieval sanity check.
+  `tsc` clean, 18 vitest tests passing.
+
+Setup: `cp .env.example .env`, fill in `VOYAGE_API_KEY`, then `npm run
+db:up && npm run db:migrate && npm run db:seed`.
+
+Remaining build order: agent + tool loop (session 3), trimmed eval
+suite with 10-12 scenarios (session 4), deploy + demo script (session
+5), docs + wrap (session 6). POC scope. The session workflow above is
+in effect.

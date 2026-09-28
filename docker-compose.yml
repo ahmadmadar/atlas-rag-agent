@@ -1,0 +1,21 @@
+# Local Postgres with pgvector. Runs on 5433 so it can sit alongside
+# other local Postgres containers on the default 5432.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: atlas-pg
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: atlas
+    ports:
+      - "5433:5432"
+    volumes:
+      - atlas-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  atlas-pg-data:
