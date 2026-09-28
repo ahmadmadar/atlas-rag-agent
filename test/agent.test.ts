@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
 import { runAgent, type CreateMessage } from "../src/agent/agent.js";
-import { MAX_ROUNDS, NOT_FOUND_PREFIX } from "../src/agent/prompt.js";
+import { MAX_ROUNDS } from "../src/agent/prompt.js";
 import type { ToolExecutor } from "../src/tools/index.js";
 
 const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
@@ -19,7 +19,10 @@ function toolTurn(...calls: { name: string; input: unknown }[]): Anthropic.Messa
   } as unknown as Anthropic.Message;
 }
 
-function textTurn(text: string): Anthropic.Message {
+// The final answer is structured JSON; `raw` sends the text as-is to test
+// what happens when it isn't.
+function textTurn(answer: string, status: "answered" | "not_found" = "answered", raw = false): Anthropic.Message {
+  const text = raw ? answer : JSON.stringify({ status, answer });
   return {
     id: "msg",
     type: "message",
@@ -71,7 +74,7 @@ describe("runAgent", () => {
       toolTurn(search),
       toolTurn(search),
       toolTurn(search),
-      textTurn(`${NOT_FOUND_PREFIX} nothing responsive.`),
+      textTurn("Searched cyber and property; nothing responsive.", "not_found"),
     ]);
     const result = await runAgent("q", { createMessage, executeTool: v3Section });
 
@@ -109,7 +112,7 @@ describe("runAgent", () => {
   });
 
   it("returns a failing tool to the model as an is_error result instead of throwing", async () => {
-    const { createMessage, requests } = scripted([toolTurn(search), textTurn(`${NOT_FOUND_PREFIX} search failed.`)]);
+    const { createMessage, requests } = scripted([toolTurn(search), textTurn("Search failed; nothing to cite.", "not_found")]);
     const failing: ToolExecutor = async () => {
       throw new Error("Unknown document_id");
     };
@@ -136,6 +139,31 @@ describe("runAgent", () => {
     const result = await runAgent("q", { createMessage, executeTool: v3Section });
     expect(result.status).toBe("answered");
     expect(result.grounded).toBe(false);
+  });
+
+  it("takes status from the structured field, wherever the text says not found", async () => {
+    // The baseline defect: an explanation first, then the not-found line.
+    // Status no longer depends on where that line sits in the prose.
+    const { createMessage, requests } = scripted([
+      toolTurn(search),
+      textTurn("No E&O product appears in the corpus.\n\nNot found in the Atlas corpus: no E&O limit.", "not_found"),
+    ]);
+    const result = await runAgent("q", { createMessage, executeTool: v3Section });
+    expect(result.status).toBe("not_found");
+    expect(requests.every((r) => r.output_config?.format?.type === "json_schema")).toBe(true);
+  });
+
+  it("keeps a partial answer as answered even when it ends with a not-found paragraph", async () => {
+    const { createMessage } = scripted([
+      toolTurn(search),
+      textTurn("GL is $2M [uw-guidelines-cp-v3 §2.2].\n\nNot found in the Atlas corpus: the GL supplemental forms."),
+    ]);
+    expect((await runAgent("q", { createMessage, executeTool: v3Section })).status).toBe("answered");
+  });
+
+  it("fails loudly if the final answer isn't the structured JSON", async () => {
+    const { createMessage } = scripted([toolTurn(search), textTurn("plain prose answer", "answered", true)]);
+    await expect(runAgent("q", { createMessage, executeTool: v3Section })).rejects.toThrow(/not JSON/);
   });
 
   it("stops on a refusal instead of returning partial text", async () => {

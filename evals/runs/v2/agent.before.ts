@@ -1,5 +1,4 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { z } from "zod";
 import { getAgentEnv } from "../env.js";
 import { TOOL_DEFINITIONS, executeTool, type ToolExecutor } from "../tools/index.js";
 import type { RetrievedSection } from "../tools/types.js";
@@ -8,32 +7,6 @@ import { MAX_ROUNDS, NOT_FOUND_PREFIX, SYSTEM_PROMPT, roundNotice } from "./prom
 
 export const AGENT_MODEL = "claude-sonnet-5";
 const MAX_TOKENS = 16000;
-
-// The final answer is constrained to this JSON shape, so status is a field
-// the model sets rather than something parsed from the prose. Tool-calling
-// turns are unaffected; the constraint applies to the answer text.
-const FINAL_ANSWER_SCHEMA = {
-  type: "object",
-  properties: {
-    status: { type: "string", enum: ["answered", "not_found"] },
-    answer: { type: "string" },
-  },
-  required: ["status", "answer"],
-  additionalProperties: false,
-};
-const FinalAnswer = z.object({ status: z.enum(["answered", "not_found"]), answer: z.string() });
-
-export function parseFinalAnswer(text: string): z.infer<typeof FinalAnswer> {
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    throw new AgentError(`Final answer was not JSON: ${text.slice(0, 200)}`);
-  }
-  const parsed = FinalAnswer.safeParse(json);
-  if (!parsed.success) throw new AgentError(`Final answer did not match the schema: ${text.slice(0, 200)}`);
-  return { status: parsed.data.status, answer: parsed.data.answer.trim() };
-}
 
 export type CreateMessage = (params: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
 
@@ -109,7 +82,6 @@ export async function runAgent(question: string, deps: AgentDeps = {}): Promise<
       // Caches the growing conversation, so later rounds re-read earlier
       // rounds' tool results from cache instead of paying for them again.
       cache_control: { type: "ephemeral" },
-      output_config: { format: { type: "json_schema", schema: FINAL_ANSWER_SCHEMA } },
       messages,
     });
 
@@ -128,13 +100,13 @@ export async function runAgent(question: string, deps: AgentDeps = {}): Promise<
 
     const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
-      const text = response.content
+      const answer = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === "text")
         .map((b) => b.text)
-        .join("");
-      const { status, answer } = parseFinalAnswer(text);
+        .join("")
+        .trim();
       messages.push({ role: "assistant", content: response.content });
-      return { ...finish(question, answer, status, trace, retrieved, capReached, usage), messages, servedModels: [...servedModels] };
+      return { ...finish(question, answer, trace, retrieved, capReached, usage), messages, servedModels: [...servedModels] };
     }
     if (capReached) {
       throw new AgentError("Model requested tools after the round cap despite tool_choice none.");
@@ -174,8 +146,6 @@ export async function runAgent(question: string, deps: AgentDeps = {}): Promise<
   }
 }
 
-// Pre-v2 status rule: the answer had to start with the prefix. Kept for
-// re-grading traces recorded before status became a structured field.
 export function answerStatus(answer: string): AgentResult["status"] {
   return answer.startsWith(NOT_FOUND_PREFIX) ? "not_found" : "answered";
 }
@@ -183,12 +153,12 @@ export function answerStatus(answer: string): AgentResult["status"] {
 function finish(
   question: string,
   answer: string,
-  status: AgentResult["status"],
   trace: RoundTrace[],
   retrieved: RetrievedSection[],
   capReached: boolean,
   usage: AgentResult["usage"],
 ): Omit<AgentResult, "messages" | "servedModels"> {
+  const status = answerStatus(answer);
   const { citations, ungrounded } = checkCitations(answer, retrieved);
   const grounded = status === "not_found" ? ungrounded.length === 0 : citations.length > 0 && ungrounded.length === 0;
   return {

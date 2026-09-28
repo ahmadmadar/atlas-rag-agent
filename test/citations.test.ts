@@ -12,6 +12,19 @@ describe("extractCitations", () => {
     ]);
   });
 
+  it("carries the document forward to a bare § in the same bracket", () => {
+    expect(extractCitations("[claims-handling-policy §4, §3] [claims-handling-policy §5 and §6]")).toEqual([
+      { documentId: "claims-handling-policy", section: "4" },
+      { documentId: "claims-handling-policy", section: "3" },
+      { documentId: "claims-handling-policy", section: "5" },
+      { documentId: "claims-handling-policy", section: "6" },
+    ]);
+  });
+
+  it("ignores a bare § with no document before it", () => {
+    expect(extractCitations("[§2.2]")).toEqual([]);
+  });
+
   it("ignores brackets without a section marker", () => {
     expect(extractCitations("See [the guidelines] and [1].")).toEqual([]);
   });
@@ -34,7 +47,7 @@ describe("checkCitations", () => {
   });
 
   it("does not treat §2 as a parent of §20", () => {
-    const r = [{ documentId: "d", section: "20" }];
-    expect(checkCitations("[d §2]", r).ungrounded).toHaveLength(1);
+    const r = [{ documentId: "risk-appetite-statement", section: "20" }];
+    expect(checkCitations("[risk-appetite-statement §2]", r).ungrounded).toHaveLength(1);
   });
 });

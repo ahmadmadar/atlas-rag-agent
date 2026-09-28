@@ -95,7 +95,7 @@ Dated, specific engagement log entries, not vague summaries.
 
 ## Current build status
 
-Sessions 1-3 of six complete.
+Sessions 1-4 of six complete.
 
 - Session 1 (committed on main): fictional corpus (corpus/, 7
   documents, including a deliberately conflicting v2/v3 pair to
@@ -112,7 +112,7 @@ Sessions 1-3 of six complete.
   hash-based idempotent seed (`npm run db:seed`, `--force` to
   re-embed), and `npm run ingest:verify` for a retrieval sanity check.
   `tsc` clean, 18 vitest tests passing.
-- Session 3 (branch `feat/agent-tool-loop`): agent + tool loop. Three
+- Session 3 (merged via PR #1, d038a18): agent + tool loop. Three
   tools in src/tools/ (each returned section carries effectiveDate/
   status/supersession; `get_document_section` takes a parent number or
   "header"). Hand-written Messages API loop on `claude-sonnet-5` in
@@ -128,12 +128,30 @@ Sessions 1-3 of six complete.
   v3-governs, historical v2-vs-v3, and the E&O trap. Open calibration
   point for session 4: one E&O run asserted "Atlas does not write E&O",
   stronger than the corpus supports. `tsc` clean, 38 tests passing.
+- Session 4 (branch `feat/eval-suite`): eval suite. 12 scenarios in
+  evals/scenarios.json (lookup, authority x3, historical, multi-hop x3,
+  unanswerable x2, partial), expected values from corpus text.
+  `npm run eval -- --variant <baseline|vN> --reps 3` runs `runAgent()`
+  and grades: status, key facts, required citations + grounding, and an
+  Opus 5 claims judge (evals/grade.ts; hand-written JSON schema, sees
+  section headings, fails unstated qualifiers). `eval:judge-check` = 12
+  calibration probes; `eval:regrade` re-grades stored traces without
+  re-running the agent. Output in evals/runs/<variant>/ (results.jsonl,
+  errors.jsonl, change.md/.patch; traces gitignored). Results: baseline
+  86%, v1 (stricter prompt) 76% with status unchanged, v2 90% with
+  status 100%. v2 ships: final answer is structured JSON
+  `{status, answer}` via `output_config.format`; `NOT_FOUND_PREFIX` is
+  now display-only (CLI) plus legacy parsing in regrade. Also fixed:
+  citation parser now reads `[doc §4, §3]`. Top remaining failure:
+  claims beyond retrieved text, sometimes stale v2 figures cited to v3
+  (caught by grounding check + judge). Free Voyage tier causes
+  occasional 300s timeouts (logged, not scored). `tsc` clean, 72 tests.
 
 Setup: `cp .env.example .env`, fill in `VOYAGE_API_KEY` and
 `ANTHROPIC_API_KEY`, then `npm run db:up && npm run db:migrate && npm
 run db:seed`.
 
-Remaining build order: trimmed eval suite with 10-12 scenarios
-(session 4, can consume `npm run ask -- --json` / `runAgent()` trace), deploy + demo script (session
-5), docs + wrap (session 6). POC scope. The session workflow above is
+Remaining build order: deploy + demo script (session 5), docs + wrap
+(session 6). Candidate follow-up, not scheduled: reduce claims beyond
+retrieved text, measured as the next eval variant (v3). POC scope. The session workflow above is
 in effect.

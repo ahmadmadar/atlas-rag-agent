@@ -1,0 +1,14 @@
+{
+  "metrics": [
+    { "id": "pass", "label": "pass", "kind": "binary" },
+    { "id": "status", "label": "status", "kind": "binary" },
+    { "id": "facts", "label": "facts", "kind": "binary" },
+    { "id": "citations", "label": "citations", "kind": "binary" },
+    { "id": "judge", "label": "claims judge", "kind": "binary" }
+  ],
+  "perf_fields": [
+    { "id": "latency_s", "label": "latency", "unit": "s" },
+    { "id": "rounds", "label": "rounds" },
+    { "id": "tool_calls", "label": "tool calls" }
+  ]
+}

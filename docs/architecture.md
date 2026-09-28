@@ -191,9 +191,12 @@ returned) that the session 4 evals can assert on.
 §section]`, and after every answer I check each one against the
 sections tools actually returned during that run. An answer is
 `grounded` only if it cites at least one source and every citation
-points at a retrieved section. A "not found" answer (which must begin
-with a fixed prefix) is exempt from the at-least-one rule, since it
-makes no claims from the corpus.
+points at a retrieved section. A "not found" answer (status
+`not_found`, see "Answer status as a structured field" below) is exempt
+from the at-least-one rule, since it makes no claims from the corpus.
+A bare section that continues the previous document, as in
+`[claims-handling-policy §4, §3]`, counts as a citation to that
+document; the first eval run showed the parser was dropping these.
 
 **Why:** "Citations are required" is only a rule if something checks
 it. The check catches the two failures that matter most here: citing
@@ -205,3 +208,100 @@ failed check is reported with the answer (the CLI prints a warning and
 the result carries `grounded: false`) rather than triggering an
 automatic retry. The evals will measure how often it happens before I
 decide whether a retry is worth the added cost.
+
+**What the evals showed:** it happens. Across the three session 4 runs,
+the check caught answers citing sections the agent had never read, most
+seriously one that stated the superseded $5M Tier 1 limit as current
+and attributed it to v3 §2.2 (which says $8M). The claims judge failed
+the same answers independently. A retry is still not built; see the
+evaluation section for where this sits in the failure mix.
+
+## Answer status as a structured field
+
+**Decision:** The final answer is JSON constrained by the API's
+structured output (`output_config.format`): `{status: "answered" |
+"not_found", answer}`. Status is a field the model sets, not something
+parsed from the text.
+
+**Why:** In session 3 I had the model begin a "not found" answer with a
+fixed prefix and parsed status from that. The session 4 baseline showed
+the model often writes an explanation first and the prefix second (3 of
+6 attempts on the two unanswerable scenarios), so a correct answer
+reported the wrong status to anything downstream. I tried a stricter
+prompt instruction first (v1), and it changed nothing: status accuracy
+was 92% before and after. A code heuristic that looks for the prefix at
+the start of any paragraph was the other option, and I rejected it:
+it can't tell "explanation, then not found" from a partial answer whose
+last paragraph states which part the corpus doesn't cover, so it would
+trade one misclassification for another. With the structured field
+(v2), status was correct on 34 of 34 graded attempts and both
+unanswerable scenarios passed 3 of 3.
+
+**Cost:** the constraint applies only to the final answer text, so tool
+calling is unchanged, including the forced final answer after the
+round cap (`tool_choice: "none"`), which I checked with a live call
+before building it. The CLI adds the "Not found in the Atlas corpus:"
+line when displaying a `not_found` answer. If the model ever returns
+text that isn't the expected JSON, the agent fails loudly rather than
+guessing a status.
+
+## Evaluation
+
+**What I measure:** 12 scenarios (evals/scenarios.json) covering
+lookup, the authority rule (three current-rule questions where v2 and
+v3 disagree), a historical question where citing v2 is correct,
+multi-hop questions across documents, two unanswerable questions, and a
+partially answerable one. I wrote each expected answer from the corpus
+text, not from any model's output. Each scenario runs 3 times through
+the real `runAgent()` entry point (`npm run eval`).
+
+**How I grade:** an attempt passes only if it passes all of these:
+- status matches (answered vs. not_found)
+- the key facts appear (e.g. "$8,000,000"), checked as literal strings
+- the required sections are cited, and every citation points at a
+  section the agent actually retrieved
+- a claims judge (Claude Opus 5, deliberately not the Sonnet 5 model
+  under test) reads the answer next to the text of every section it
+  cites, plus a per-scenario note on what counts as failing, and fails
+  any claim the cited text doesn't support, including qualifiers the
+  text doesn't state ("per occurrence" on a sublimit)
+
+The code checks exist because they're exact and free. The judge exists
+because the most important failure here, an answer that goes beyond its
+source, isn't visible to a string match: the session 3 "Atlas does not
+write E&O" overstatement passes every code check.
+
+**Trusting the grader:** before scoring anything I ran an oracle (each
+scenario's expected answer) and an empty answer through the code
+checks, and a set of known-good and known-bad answers through the judge
+(`npm run eval:judge-check`, 12 probes, all must match). Reading every
+failure in the first baseline found three grader bugs: the judge's
+output schema had silently lost its pass/fail constraint, the judge
+couldn't see section headings, and the citation parser dropped
+`[doc §4, §3]`-style citations. Two of the baseline's failures were
+these bugs, not the agent. I fixed them and re-graded the stored
+answers (`npm run eval:regrade`) rather than re-running the agent, so
+the baseline and the variants are graded by the same grader.
+
+**Results** (pass rate over 12 scenarios x 3 runs, mean of per-scenario
+means with a 95% interval):
+
+| Variant | Change | Pass | Status |
+|---|---|---|---|
+| baseline | session 3 agent | 86% ±13 | 92% |
+| v1 | stricter prompt for the not-found prefix | 76% ±15 | 92% |
+| v2 | status as a structured field | 90% ±13 | 100% |
+
+v2 is what ships. Its overall gain over baseline (+4 points) is within
+noise; the status fix is by construction, not by measurement. The
+dominant remaining failure is the agent adding a claim beyond what it
+retrieved, sometimes from memory, which both the citation check and the
+judge catch.
+
+**Limits:** 12 scenarios x 3 runs gives roughly ±13 points on the
+headline, enough to catch a behavior that breaks, not enough to rank
+small prompt changes. On Voyage's free tier (3 requests per minute) a
+full run takes about 25 minutes, latency figures include rate-limit
+waits, and the searches-heaviest scenarios occasionally hit the
+300-second per-attempt ceiling; those are logged in errors.jsonl, not
+scored as failures. A full run costs about $1.40 (agent plus judge).

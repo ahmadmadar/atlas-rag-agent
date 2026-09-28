@@ -41,6 +41,14 @@ npm run ask -- "What is the maximum TIV a field underwriter can bind in a Tier 1
 `npm run ask` prints the answer, the tool calls from each round, and
 the citation check. Add `--json` for the full structured result.
 
+To run the eval suite (12 scenarios x 3 runs, about $1.40 and 25
+minutes on Voyage's free tier):
+
+```bash
+npm run eval -- --variant v3 --reps 3   # baseline, v1, v2 are recorded; each change gets the next vN
+npm run eval:judge-check                # confirms the claims judge on known answers
+```
+
 ## Docs
 
 - [Architecture](docs/architecture.md): the technical and business
@@ -51,11 +59,14 @@ the citation check. Add `--json` for the full structured result.
 
 ## Status
 
-I've completed sessions 1-3 of a planned six-session build: the
+I've completed sessions 1-4 of a planned six-session build: the
 fictional corpus and decisions doc, the ingestion pipeline (Voyage
-embeddings in pgvector), and the agent with its three tools, 3-round
-cap and citation check, runnable from the CLI. I haven't yet built the
-eval suite, deployment, or demo script.
+embeddings in pgvector), the agent with its three tools, 3-round cap
+and citation check, and an eval suite that measured it. The current
+agent passes 90% (±13) of 12 scenarios across 3 runs each, with answer
+status correct on every graded attempt; the evaluation section of
+docs/architecture.md has the numbers and what they do and don't show.
+I haven't yet built the deployment or demo script.
 
 ## Live links
 

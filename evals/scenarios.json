@@ -1,0 +1,149 @@
+{
+  "_about": "Eval scenarios for the Atlas agent. Expected values are taken from the corpus text, not from any model's output. status: the answered/not_found outcome. facts: each entry passes if any listed string appears in the answer (case-insensitive, markdown bold stripped). citations: each group passes if the answer cites any one of its sections. judge: what the claim judge should watch for on this case, on top of its standard rubric.",
+  "scenarios": [
+    {
+      "id": "lookup-cyber-ransomware",
+      "category": "lookup",
+      "question": "What's the ransomware sublimit on an Atlas cyber policy?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "$1M ransomware sublimit", "any": ["$1,000,000", "$1m", "$1 million"] }],
+        "citations": [["cyber-liability-underwriting-addendum §3"]]
+      },
+      "judge": "The ransomware/cyber extortion payment sublimit is $1,000,000."
+    },
+    {
+      "id": "lookup-litigation-referral",
+      "category": "lookup",
+      "question": "At what reserve level does a claim have to be referred to Atlas Legal?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "$250K incurred reserve", "any": ["$250,000", "$250k", "$250 thousand"] }],
+        "citations": [["claims-handling-policy §5"]]
+      },
+      "judge": "Referral is required when incurred reserve (indemnity plus expense) exceeds $250,000. Mentioning the other referral triggers (suit filed, attorney letter, bad faith) is fine but not required. Confusing this with the $100,000 supervisor-approval threshold for reserve increases is a failure."
+    },
+    {
+      "id": "authority-coastal-tiv",
+      "category": "authority",
+      "question": "What is the maximum TIV a field underwriter can bind in a Tier 1 coastal county?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "$8M (v3)", "any": ["$8,000,000", "$8m", "$8 million"] }],
+        "citations": [["uw-guidelines-cp-v3 §2.2", "uw-guidelines-cp-v3 §2"]]
+      },
+      "judge": "The governing answer is $8,000,000 per location from v3.0 (effective 2025-11-01). v2.0's $5,000,000 may be mentioned only if it is clearly labeled as superseded. Presenting $5,000,000 as current, or as an equally valid alternative, is a failure."
+    },
+    {
+      "id": "authority-roof-age",
+      "category": "authority",
+      "question": "When is a four-point inspection report required on a commercial property submission?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "roof older than 10 years", "any": ["10 years", "ten years"] }],
+        "citations": [["uw-guidelines-cp-v3 §3.1", "uw-guidelines-cp-v3 §3"]]
+      },
+      "judge": "Governing rule is v3.0: required if the roof is older than 10 years. v2.0's 15-year threshold may appear only as clearly superseded. Stating 15 years as the current rule is a failure."
+    },
+    {
+      "id": "authority-standard-binding",
+      "category": "authority",
+      "question": "How much TIV can a field underwriter bind without home office referral on a standard, non-coastal commercial property risk?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "$15M (v3)", "any": ["$15,000,000", "$15m", "$15 million"] }],
+        "citations": [["uw-guidelines-cp-v3 §2.1", "uw-guidelines-cp-v3 §2"]]
+      },
+      "judge": "Governing answer is $15,000,000 per location from v3.0, conditional on Section 4 (prohibited risks) conditions being met. v2.0's $10,000,000 may appear only as clearly superseded."
+    },
+    {
+      "id": "historical-coastal-deductible",
+      "category": "historical",
+      "question": "Before the November 2025 guideline revision, what was the minimum named-storm deductible for Tier 1 coastal risks?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "2% of TIV (v2)", "any": ["2%", "2 percent", "two percent"] }],
+        "citations": [["uw-guidelines-cp-v2 §2.2", "uw-guidelines-cp-v2 §2"]]
+      },
+      "judge": "The question is explicitly historical, so answering from v2.0 (2% of TIV) and citing it is correct. Mentioning that v3.0 raised it to 5% is fine. Answering 5% as the answer to this question is a failure."
+    },
+    {
+      "id": "multihop-litigated-claim-retention",
+      "category": "multi-hop",
+      "question": "How long do we have to keep a claim file if the claim was in litigation when it closed?",
+      "expect": {
+        "status": "answered",
+        "facts": [
+          { "label": "10 years after closure", "any": ["10 years", "ten years"] },
+          { "label": "2 years after final resolution", "any": ["2 years", "two years"] }
+        ],
+        "citations": [["data-retention-privacy-policy §3"]]
+      },
+      "judge": "The claims policy (§6) defers retention to the Data Retention & Privacy Policy. Correct answer: 10 years after closure, or until 2 years after final resolution of the litigation if that runs longer. Giving only the 10-year rule without the litigation extension is a failure. Using the 7-year underwriting-file rule is a failure."
+    },
+    {
+      "id": "multihop-cyber-7m-limit",
+      "category": "multi-hop",
+      "question": "A producer's client wants a $7M cyber limit. Can a field underwriter quote that, and what commission does the producer earn if it binds as new business?",
+      "expect": {
+        "status": "answered",
+        "facts": [
+          { "label": "$5M cap / referral", "any": ["$5,000,000", "$5m", "$5 million"] },
+          { "label": "10% new business commission", "any": ["10%", "10 percent", "ten percent"] }
+        ],
+        "citations": [
+          ["cyber-liability-underwriting-addendum §5", "risk-appetite-statement §4"],
+          ["producer-compensation-policy §2"]
+        ]
+      },
+      "judge": "$7M exceeds the $5,000,000 per-occurrence cyber capacity and is a home office referral trigger, so a field underwriter can't quote it on their own authority. Cyber new-business commission is 10%. Claiming the underwriter can quote $7M, or giving the 15% property/GL commission, is a failure. The answer should not invent whether home office would approve it."
+    },
+    {
+      "id": "multihop-coastal-no-wind-mitigation",
+      "category": "multi-hop",
+      "question": "A Tier 1 coastal risk has a $6M TIV and a 5-year-old roof, but the insured can't produce a wind mitigation report. Can the field underwriter bind it?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "refer to home office", "any": ["home office", "refer"] }],
+        "citations": [
+          ["uw-guidelines-cp-v3 §3.2", "uw-guidelines-cp-v3 §3"],
+          ["uw-guidelines-cp-v3 §5"]
+        ]
+      },
+      "judge": "Under v3.0 the TIV is within the $8M Tier 1 limit, but a wind mitigation report is required for all Tier 1 coastal risks regardless of roof age (§3.2), and inability to produce it is a home office referral trigger (§5). So no, not on field authority; refer to home office. Saying it can be bound because TIV is under the limit and the roof is under 10 years (the v2-era reasoning) is a failure."
+    },
+    {
+      "id": "unanswerable-eo-limit",
+      "category": "unanswerable",
+      "question": "What is Atlas's per-occurrence limit for professional liability (E&O) coverage?",
+      "expect": {
+        "status": "not_found",
+        "facts": [],
+        "citations": []
+      },
+      "judge": "No Atlas professional liability/E&O product or limit is in the corpus. The producer compensation policy's $1,000,000 E&O requirement is the producers' own coverage, not an Atlas limit; citing it as Atlas's limit is a failure. Also a failure: asserting as fact that Atlas does not write or offer E&O. The corpus only omits it from the in-appetite list; it never says so."
+    },
+    {
+      "id": "unanswerable-auto-fleet-authority",
+      "category": "unanswerable",
+      "question": "What's the maximum fleet size a field underwriter can bind for commercial auto?",
+      "expect": {
+        "status": "not_found",
+        "facts": [],
+        "citations": []
+      },
+      "judge": "Commercial auto (fleet, non-hazmat) is in appetite and has a commission rate, but no document sets auto binding authority or fleet size limits. Mentioning that auto is in appetite is fine. Borrowing the commercial property binding limits or inventing a fleet size is a failure."
+    },
+    {
+      "id": "partial-gl-limit-and-forms",
+      "category": "partial",
+      "question": "For general liability, what's our per-occurrence capacity limit, and which supplemental application forms are required?",
+      "expect": {
+        "status": "answered",
+        "facts": [{ "label": "$2M per occurrence", "any": ["$2,000,000", "$2m", "$2 million"] }],
+        "citations": [["risk-appetite-statement §4"]]
+      },
+      "judge": "The limit part is answerable: $2,000,000 per occurrence / $4,000,000 aggregate. The forms part is not: no document specifies GL application requirements (the Atlas Cyber Supplemental Application applies to cyber only). The answer must say the corpus doesn't cover the forms part. Applying the cyber supplement to GL, or silently skipping the forms part, is a failure."
+    }
+  ]
+}

@@ -11,7 +11,10 @@
     "db:seed": "tsx prisma/seed.ts",
     "ingest:verify": "tsx src/ingestion/verify.ts",
     "test": "vitest run",
-    "ask": "tsx src/agent/ask.ts"
+    "ask": "tsx src/agent/ask.ts",
+    "eval": "tsx evals/run.ts",
+    "eval:judge-check": "tsx evals/judge-check.ts",
+    "eval:regrade": "tsx evals/regrade.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
