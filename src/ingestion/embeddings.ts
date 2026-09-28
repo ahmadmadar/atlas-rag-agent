@@ -72,8 +72,17 @@ async function embedBatch(texts: string[], inputType: InputType): Promise<EmbedR
     if (!retryable || attempt >= MAX_ATTEMPTS) {
       throw new Error(`Voyage embeddings request failed (${res.status}): ${await res.text()}`);
     }
-    await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    await new Promise((r) => setTimeout(r, retryDelayMs(res, attempt)));
   }
+}
+
+// Voyage rate limits are per minute (3 RPM on an account without a payment
+// method), so a 429 needs a backoff measured in seconds, not milliseconds.
+// Honor Retry-After when the response sends one.
+export function retryDelayMs(res: Pick<Response, "status" | "headers">, attempt: number): number {
+  const retryAfter = Number(res.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000;
+  return res.status === 429 ? 5000 * 2 ** (attempt - 1) : 500 * 2 ** attempt;
 }
 
 // pgvector's text input format: "[0.1,0.2,...]"

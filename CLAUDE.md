@@ -95,14 +95,15 @@ Dated, specific engagement log entries, not vague summaries.
 
 ## Current build status
 
-Sessions 1-2 of six complete.
+Sessions 1-3 of six complete.
 
 - Session 1 (committed on main): fictional corpus (corpus/, 7
   documents, including a deliberately conflicting v2/v3 pair to
   exercise the authority rule) and the decisions doc
   (docs/architecture.md: authority/staleness rule, "not found"
   threshold, chunking strategy).
-- Session 2 (branch `feat/ingestion-pipeline`): ingestion pipeline.
+- Session 2 (committed directly on main as a9e0be5, no branch/PR):
+  ingestion pipeline.
   Local Postgres + pgvector via docker-compose on port 5433 (`npm run
   db:up`), Prisma schema (Document with effectiveDate/status/
   supersedes, Chunk with section metadata + `vector(1024)`), Zod env
@@ -111,11 +112,28 @@ Sessions 1-2 of six complete.
   hash-based idempotent seed (`npm run db:seed`, `--force` to
   re-embed), and `npm run ingest:verify` for a retrieval sanity check.
   `tsc` clean, 18 vitest tests passing.
+- Session 3 (branch `feat/agent-tool-loop`): agent + tool loop. Three
+  tools in src/tools/ (each returned section carries effectiveDate/
+  status/supersession; `get_document_section` takes a parent number or
+  "header"). Hand-written Messages API loop on `claude-sonnet-5` in
+  src/agent/agent.ts: a round is one tool-calling turn (parallel calls
+  count once), cap of 3 enforced in code via `tool_choice: "none"`,
+  round-count notice appended to each round's results. Citations are
+  `[document_id §section]`, checked against sections tools actually
+  returned (`grounded` flag); "not found" answers start with a fixed
+  prefix (`NOT_FOUND_PREFIX`). Separate `getAgentEnv()` guard so
+  ingestion doesn't require `ANTHROPIC_API_KEY`. CLI: `npm run ask --
+  "q" [--json]`. Voyage 429 backoff now honors Retry-After / waits
+  5-20s (account is on the 3 RPM no-payment tier). Live runs passed on
+  v3-governs, historical v2-vs-v3, and the E&O trap. Open calibration
+  point for session 4: one E&O run asserted "Atlas does not write E&O",
+  stronger than the corpus supports. `tsc` clean, 38 tests passing.
 
-Setup: `cp .env.example .env`, fill in `VOYAGE_API_KEY`, then `npm run
-db:up && npm run db:migrate && npm run db:seed`.
+Setup: `cp .env.example .env`, fill in `VOYAGE_API_KEY` and
+`ANTHROPIC_API_KEY`, then `npm run db:up && npm run db:migrate && npm
+run db:seed`.
 
-Remaining build order: agent + tool loop (session 3), trimmed eval
-suite with 10-12 scenarios (session 4), deploy + demo script (session
+Remaining build order: trimmed eval suite with 10-12 scenarios
+(session 4, can consume `npm run ask -- --json` / `runAgent()` trace), deploy + demo script (session
 5), docs + wrap (session 6). POC scope. The session workflow above is
 in effect.
