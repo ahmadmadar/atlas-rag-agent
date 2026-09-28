@@ -10,12 +10,14 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "ingest:verify": "tsx src/ingestion/verify.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "ask": "tsx src/agent/ask.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@prisma/client": "^6.19.3",
     "dotenv": "^18.0.4",
     "gray-matter": "^4.0.3",

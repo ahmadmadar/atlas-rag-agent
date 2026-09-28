@@ -29,8 +29,17 @@ generated vs. what I architected.
 
 ## Quickstart
 
-I'll add setup steps to `docs/setup.md` once the ingestion pipeline is
-built. They're not written yet, so I'm not duplicating them here.
+Requires Docker and Node 20+.
+
+```bash
+cp .env.example .env   # fill in VOYAGE_API_KEY and ANTHROPIC_API_KEY
+npm install
+npm run db:up && npm run db:migrate && npm run db:seed
+npm run ask -- "What is the maximum TIV a field underwriter can bind in a Tier 1 coastal county?"
+```
+
+`npm run ask` prints the answer, the tool calls from each round, and
+the citation check. Add `--json` for the full structured result.
 
 ## Docs
 
@@ -42,10 +51,11 @@ built. They're not written yet, so I'm not duplicating them here.
 
 ## Status
 
-I've completed session 1 of a planned six-session build: the fictional
-corpus (7 documents, corpus/) and the architecture/decisions doc. I
-haven't yet built the ingestion pipeline, agent + tool loop, eval
-suite, deployment, or demo script.
+I've completed sessions 1-3 of a planned six-session build: the
+fictional corpus and decisions doc, the ingestion pipeline (Voyage
+embeddings in pgvector), and the agent with its three tools, 3-round
+cap and citation check, runnable from the CLI. I haven't yet built the
+eval suite, deployment, or demo script.
 
 ## Live links
 

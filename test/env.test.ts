@@ -19,4 +19,12 @@ describe("getEnv", () => {
     const { getEnv } = await import("../src/env.js");
     expect(getEnv().VOYAGE_API_KEY).toBe("k");
   });
+  it("keeps the agent key out of the ingestion guard but requires it for the agent", async () => {
+    vi.stubEnv("DATABASE_URL", "postgresql://x");
+    vi.stubEnv("VOYAGE_API_KEY", "k");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    const { getEnv, getAgentEnv } = await import("../src/env.js");
+    expect(() => getEnv()).not.toThrow();
+    expect(() => getAgentEnv()).toThrow(/ANTHROPIC_API_KEY/);
+  });
 });

@@ -134,3 +134,74 @@ specifically to make this tractable.
 
 ## Single-agent vs. planner/orchestrator split
 
+**Decision:** One agent owns the whole retrieve/assess/refine loop. I
+didn't split it into a planner that decomposes the question and
+workers that retrieve for each part.
+
+**Why:** The corpus is seven documents and 46 sections. A question
+touches at most a handful of them, and the hardest reasoning step
+(which version governs when v2 and v3 disagree) needs both versions in
+the same context at the same time. A planner/worker split would push
+that comparison across a handoff, where each worker sees only its own
+slice, and I'd need a separate reconciliation step to put it back
+together. It would also multiply model calls per question for no
+retrieval benefit at this corpus size, and give me more places for a
+citation to lose track of where it came from. A single agent with
+parallel tool calls in one round already gets the fan-out benefit
+(e.g. fetch v2 §2.2 and v3 §2.2 together) without the coordination cost.
+
+**When I'd revisit it:** a corpus large enough that one agent's context
+can't hold the evidence for a multi-hop question, or question types
+that genuinely decompose into independent sub-investigations (e.g. "compare
+our cyber and property referral triggers across all five lines"). Neither
+applies to this POC.
+
+## Agent loop and the iteration cap
+
+**Decision:** A round is one model turn that makes tool calls, however
+many calls it makes in parallel. The agent gets at most 3 rounds. I
+enforce the cap in code: after the third round's results, the next
+request sets `tool_choice: "none"`, so the model can't call another
+tool even if it tries, and has to answer from what it has or say the
+corpus doesn't fully cover the question.
+
+**Why a round and not a tool call:** Counting individual calls would
+penalize exactly the behavior I want, like fetching both versions of a
+section at once to compare them. Counting rounds matches the actual
+retrieve, assess, refine rhythm: each round is one assessment of
+sufficiency.
+
+**Why in code, not just in the prompt:** The system prompt tells the
+model it has 3 rounds, and after each round I append a short notice
+("Round 2 of 3 used, 1 left") so it can pace itself. But a prompt
+instruction is a request, and the cap exists to bound cost and latency.
+If the model ignores the prompt, the `tool_choice` switch still holds.
+The loop also throws if the model somehow returns a tool call after the
+cap, rather than silently running it.
+
+**Model:** Claude Sonnet 5 through a hand-written Messages API loop. I
+chose a manual loop over the SDK's tool runner or the Claude Agent SDK
+because the cap is defined in rounds, and I wanted the loop to produce
+a structured per-round trace (which tools ran, which sections they
+returned) that the session 4 evals can assert on.
+
+## Citation grounding check
+
+**Decision:** Citations use a fixed inline format, `[document_id
+§section]`, and after every answer I check each one against the
+sections tools actually returned during that run. An answer is
+`grounded` only if it cites at least one source and every citation
+points at a retrieved section. A "not found" answer (which must begin
+with a fixed prefix) is exempt from the at-least-one rule, since it
+makes no claims from the corpus.
+
+**Why:** "Citations are required" is only a rule if something checks
+it. The check catches the two failures that matter most here: citing
+a section the agent never read (a hallucinated or remembered citation),
+and citing the right section number from the wrong version (v2 §2.2
+when only v3 §2.2 was retrieved). `list_documents` returns an outline,
+not section text, so it never counts as evidence. For the POC, a
+failed check is reported with the answer (the CLI prints a warning and
+the result carries `grounded: false`) rather than triggering an
+automatic retry. The evals will measure how often it happens before I
+decide whether a retry is worth the added cost.

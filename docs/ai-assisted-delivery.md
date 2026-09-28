@@ -94,3 +94,41 @@ overlap plus the ellipsis and paragraph break pushed it past the cap),
 fixed the budget, and added a test for it. Gap noted: no corpus section
 is longer than about 107 tokens, so the oversized-section split path is
 only exercised by unit tests, not real data.
+
+**2026-09-28, Session 3: agent + tool loop.** I built the agent that
+answers questions from the corpus: three tools (`search_knowledge_base`,
+`get_document_section`, `list_documents`) and a single
+retrieve/assess/refine loop on Claude Sonnet 5, runnable with `npm run
+ask`. Every section a tool returns carries its document's effective
+date, status and supersession link, so the agent can apply the
+authority rule without an extra lookup.
+
+Decisions I made this session: I wrote the loop by hand on the Messages
+API instead of using the Claude Agent SDK, because I wanted the 3-round
+cap and a per-round trace (which the evals will assert on) in my own
+code. I defined a round as one model turn, so fetching v2 and v3 of a
+section in parallel costs one round, not two. I enforce the cap in
+code: after round 3 the request sets `tool_choice: "none"`, so the cap
+holds even if the model ignores the prompt. I made citations a fixed
+`[document_id §section]` format and check every one against the
+sections the tools actually returned in that run, which catches a
+citation to the right section number in the wrong version. I gave the
+agent key its own env guard so ingestion doesn't require it. I also
+wrote up the single-agent decision in docs/architecture.md, which I'd
+left as an empty heading.
+
+What the live runs showed: the coastal TIV question came back from v3
+($8M, 5%) with v2's $5M noted as superseded. A historical roof-age
+question correctly cited both versions. The E&O trap worked: search
+returned the producer E&O section, and the agent said "not found" and
+explained why that section was a different E&O. All three answers
+matched the source text when I checked them.
+
+Caught and fixed: running two questions at once hit Voyage's free-tier
+limit (3 requests per minute), and the embedding retry gave up after
+about 7 seconds, too short for a per-minute limit. The agent recovered
+by switching tools, but that meant the E&O run never actually faced the
+trap, so I reran it. The retry now honors `Retry-After` and backs off 5
+to 20 seconds. Open for session 4: one E&O run stated "Atlas does not
+write E&O," which is stronger than the corpus supports. I'll measure
+that in the evals rather than tune the prompt on a single example.
