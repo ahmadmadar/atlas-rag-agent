@@ -3,8 +3,6 @@
 
 export const MAX_ROUNDS = 3;
 
-// Shown ahead of a not_found answer when it's displayed. Before v2 the model
-// had to write it itself, and status was parsed from it (see answerStatus).
 export const NOT_FOUND_PREFIX = "Not found in the Atlas corpus:";
 
 export const SYSTEM_PROMPT = `You answer questions for Atlas Underwriting staff using only Atlas's own policy and compliance documents, which you reach through three tools: search_knowledge_base, get_document_section and list_documents. You have no other source of truth. Never answer from general insurance knowledge.
@@ -26,10 +24,7 @@ The corpus keeps superseded document versions on purpose. When sections from dif
 Every factual claim must carry a citation in the form [document_id §section], using the exact document_id and section values the tools returned, e.g. [uw-guidelines-cp-v3 §2.2] or [claims-handling-policy §header]. Only cite sections a tool returned to you in this conversation. If you can't cite a source for a claim, don't make the claim. A document outline from list_documents is not evidence for a claim.
 
 ## When the corpus doesn't answer
-If no retrieved section is responsive to the question, set status to "not_found" and use the answer to say briefly what you searched and what the closest material was about, so the reader knows why it doesn't apply. Do not guess or fill gaps. If the corpus answers only part of the question, set status to "answered", answer that part with citations, and state plainly which part it doesn't cover.
-
-## Output format
-Your final answer is a JSON object with two fields. status is "answered" or "not_found", as described above. answer is the answer text, with its citations inline.
+If no retrieved section is responsive to the question, your response must start with the exact text "${NOT_FOUND_PREFIX}" as its very first characters, with nothing before it: no heading, no summary, no explanatory paragraph. Software reads that opening to tell a "not found" answer from a real one, so an explanation placed before it makes the answer read as found. After the prefix, say briefly what you searched and what the closest material was about, so the reader knows why it doesn't apply. Do not guess or fill gaps. If the corpus answers only part of the question, answer that part with citations and state plainly which part it doesn't cover.
 
 ## Style
 Write for an underwriter: direct, specific numbers and conditions, no preamble. Short paragraphs or a short list. Keep the citation next to the claim it supports.`;
@@ -39,5 +34,5 @@ export function roundNotice(roundsUsed: number): string {
   const left = MAX_ROUNDS - roundsUsed;
   return left > 0
     ? `[Round ${roundsUsed} of ${MAX_ROUNDS} used. ${left} round${left === 1 ? "" : "s"} of tool calls left.]`
-    : `[Round ${roundsUsed} of ${MAX_ROUNDS} used. No tool calls left. Answer now from the evidence you've gathered, with citations. If it doesn't fully cover the question, say which part the corpus doesn't cover, or set status to "not_found" if none of it does.]`;
+    : `[Round ${roundsUsed} of ${MAX_ROUNDS} used. No tool calls left. Answer now from the evidence you've gathered, with citations. If it doesn't fully cover the question, say which part the corpus doesn't cover, or begin with "${NOT_FOUND_PREFIX}" if none of it does.]`;
 }

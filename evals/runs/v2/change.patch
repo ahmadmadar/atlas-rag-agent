@@ -1,0 +1,140 @@
+--- a/src/agent/agent.ts
++++ b/src/agent/agent.ts
+@@ -1,4 +1,5 @@
+ import Anthropic from "@anthropic-ai/sdk";
++import { z } from "zod";
+ import { getAgentEnv } from "../env.js";
+ import { TOOL_DEFINITIONS, executeTool, type ToolExecutor } from "../tools/index.js";
+ import type { RetrievedSection } from "../tools/types.js";
+@@ -8,6 +9,32 @@
+ export const AGENT_MODEL = "claude-sonnet-5";
+ const MAX_TOKENS = 16000;
+ 
++// The final answer is constrained to this JSON shape, so status is a field
++// the model sets rather than something parsed from the prose. Tool-calling
++// turns are unaffected; the constraint applies to the answer text.
++const FINAL_ANSWER_SCHEMA = {
++  type: "object",
++  properties: {
++    status: { type: "string", enum: ["answered", "not_found"] },
++    answer: { type: "string" },
++  },
++  required: ["status", "answer"],
++  additionalProperties: false,
++};
++const FinalAnswer = z.object({ status: z.enum(["answered", "not_found"]), answer: z.string() });
++
++export function parseFinalAnswer(text: string): z.infer<typeof FinalAnswer> {
++  let json: unknown;
++  try {
++    json = JSON.parse(text);
++  } catch {
++    throw new AgentError(`Final answer was not JSON: ${text.slice(0, 200)}`);
++  }
++  const parsed = FinalAnswer.safeParse(json);
++  if (!parsed.success) throw new AgentError(`Final answer did not match the schema: ${text.slice(0, 200)}`);
++  return { status: parsed.data.status, answer: parsed.data.answer.trim() };
++}
++
+ export type CreateMessage = (params: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
+ 
+ export interface ToolCallTrace {
+@@ -82,6 +109,7 @@
+       // Caches the growing conversation, so later rounds re-read earlier
+       // rounds' tool results from cache instead of paying for them again.
+       cache_control: { type: "ephemeral" },
++      output_config: { format: { type: "json_schema", schema: FINAL_ANSWER_SCHEMA } },
+       messages,
+     });
+ 
+@@ -100,13 +128,13 @@
+ 
+     const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+     if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
+-      const answer = response.content
++      const text = response.content
+         .filter((b): b is Anthropic.TextBlock => b.type === "text")
+         .map((b) => b.text)
+-        .join("")
+-        .trim();
++        .join("");
++      const { status, answer } = parseFinalAnswer(text);
+       messages.push({ role: "assistant", content: response.content });
+-      return { ...finish(question, answer, trace, retrieved, capReached, usage), messages, servedModels: [...servedModels] };
++      return { ...finish(question, answer, status, trace, retrieved, capReached, usage), messages, servedModels: [...servedModels] };
+     }
+     if (capReached) {
+       throw new AgentError("Model requested tools after the round cap despite tool_choice none.");
+@@ -146,6 +174,8 @@
+   }
+ }
+ 
++// Pre-v2 status rule: the answer had to start with the prefix. Kept for
++// re-grading traces recorded before status became a structured field.
+ export function answerStatus(answer: string): AgentResult["status"] {
+   return answer.startsWith(NOT_FOUND_PREFIX) ? "not_found" : "answered";
+ }
+@@ -153,12 +183,12 @@
+ function finish(
+   question: string,
+   answer: string,
++  status: AgentResult["status"],
+   trace: RoundTrace[],
+   retrieved: RetrievedSection[],
+   capReached: boolean,
+   usage: AgentResult["usage"],
+ ): Omit<AgentResult, "messages" | "servedModels"> {
+-  const status = answerStatus(answer);
+   const { citations, ungrounded } = checkCitations(answer, retrieved);
+   const grounded = status === "not_found" ? ungrounded.length === 0 : citations.length > 0 && ungrounded.length === 0;
+   return {
+--- a/src/agent/prompt.ts
++++ b/src/agent/prompt.ts
+@@ -3,6 +3,8 @@
+ 
+ export const MAX_ROUNDS = 3;
+ 
++// Shown ahead of a not_found answer when it's displayed. Before v2 the model
++// had to write it itself, and status was parsed from it (see answerStatus).
+ export const NOT_FOUND_PREFIX = "Not found in the Atlas corpus:";
+ 
+ export const SYSTEM_PROMPT = `You answer questions for Atlas Underwriting staff using only Atlas's own policy and compliance documents, which you reach through three tools: search_knowledge_base, get_document_section and list_documents. You have no other source of truth. Never answer from general insurance knowledge.
+@@ -24,8 +26,11 @@
+ Every factual claim must carry a citation in the form [document_id §section], using the exact document_id and section values the tools returned, e.g. [uw-guidelines-cp-v3 §2.2] or [claims-handling-policy §header]. Only cite sections a tool returned to you in this conversation. If you can't cite a source for a claim, don't make the claim. A document outline from list_documents is not evidence for a claim.
+ 
+ ## When the corpus doesn't answer
+-If no retrieved section is responsive to the question, begin your answer with exactly "${NOT_FOUND_PREFIX}" and then say briefly what you searched and what the closest material was about, so the reader knows why it doesn't apply. Do not guess or fill gaps. If the corpus answers only part of the question, answer that part with citations and state plainly which part it doesn't cover.
++If no retrieved section is responsive to the question, set status to "not_found" and use the answer to say briefly what you searched and what the closest material was about, so the reader knows why it doesn't apply. Do not guess or fill gaps. If the corpus answers only part of the question, set status to "answered", answer that part with citations, and state plainly which part it doesn't cover.
+ 
++## Output format
++Your final answer is a JSON object with two fields. status is "answered" or "not_found", as described above. answer is the answer text, with its citations inline.
++
+ ## Style
+ Write for an underwriter: direct, specific numbers and conditions, no preamble. Short paragraphs or a short list. Keep the citation next to the claim it supports.`;
+ 
+@@ -34,5 +39,5 @@
+   const left = MAX_ROUNDS - roundsUsed;
+   return left > 0
+     ? `[Round ${roundsUsed} of ${MAX_ROUNDS} used. ${left} round${left === 1 ? "" : "s"} of tool calls left.]`
+-    : `[Round ${roundsUsed} of ${MAX_ROUNDS} used. No tool calls left. Answer now from the evidence you've gathered, with citations. If it doesn't fully cover the question, say which part the corpus doesn't cover, or begin with "${NOT_FOUND_PREFIX}" if none of it does.]`;
++    : `[Round ${roundsUsed} of ${MAX_ROUNDS} used. No tool calls left. Answer now from the evidence you've gathered, with citations. If it doesn't fully cover the question, say which part the corpus doesn't cover, or set status to "not_found" if none of it does.]`;
+ }
+--- a/src/agent/ask.ts
++++ b/src/agent/ask.ts
+@@ -3,6 +3,7 @@
+ import "dotenv/config";
+ import { getPrisma } from "../db/client.js";
+ import { runAgent } from "./agent.js";
++import { NOT_FOUND_PREFIX } from "./prompt.js";
+ 
+ const args = process.argv.slice(2);
+ const json = args.includes("--json");
+@@ -17,7 +18,7 @@
+   if (json) {
+     console.log(JSON.stringify(result, null, 2));
+   } else {
+-    console.log(`\n${result.answer}\n`);
++    console.log(`\n${result.status === "not_found" ? `${NOT_FOUND_PREFIX} ` : ""}${result.answer}\n`);
+     console.log("---");
+     for (const round of result.trace) {
+       console.log(`Round ${round.round}:`);

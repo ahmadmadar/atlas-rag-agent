@@ -4,5 +4,13 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src", "prisma", "test"]
+  "include": [
+    "src",
+    "prisma",
+    "test",
+    "evals"
+  ],
+  "exclude": [
+    "evals/runs"
+  ]
 }

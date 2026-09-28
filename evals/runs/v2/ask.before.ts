@@ -3,7 +3,6 @@
 import "dotenv/config";
 import { getPrisma } from "../db/client.js";
 import { runAgent } from "./agent.js";
-import { NOT_FOUND_PREFIX } from "./prompt.js";
 
 const args = process.argv.slice(2);
 const json = args.includes("--json");
@@ -18,7 +17,7 @@ try {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(`\n${result.status === "not_found" ? `${NOT_FOUND_PREFIX} ` : ""}${result.answer}\n`);
+    console.log(`\n${result.answer}\n`);
     console.log("---");
     for (const round of result.trace) {
       console.log(`Round ${round.round}:`);

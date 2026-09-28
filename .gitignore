@@ -3,3 +3,9 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Eval run output: per-case results and change notes are committed; bulky
+# transcripts and derived reports are regenerated from them.
+evals/runs/**/traces/
+evals/runs/report.html
+evals/runs/trajectory/

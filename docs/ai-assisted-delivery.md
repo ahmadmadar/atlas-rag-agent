@@ -132,3 +132,50 @@ trap, so I reran it. The retry now honors `Retry-After` and backs off 5
 to 20 seconds. Open for session 4: one E&O run stated "Atlas does not
 write E&O," which is stronger than the corpus supports. I'll measure
 that in the evals rather than tune the prompt on a single example.
+
+**2026-09-28, Session 4: eval suite.** I built a 12-scenario eval for
+the agent (lookup, three authority-rule cases where v2 and v3 disagree,
+a historical case, three multi-hop cases, two unanswerable cases, one
+partial), with expected answers taken from the corpus text rather than
+from any model's output. Each scenario runs 3 times through the real
+`runAgent()` entry point. An attempt passes only if status, key facts,
+required citations and citation grounding all check out in code, and a
+claims judge (Claude Opus 5, deliberately not the Sonnet 5 model under
+test) finds no claim the cited sections don't support.
+
+Decisions I made this session: I kept the suite at 12 scenarios per the
+POC scope and accepted a margin of about ±13 points, enough to catch a
+broken behavior but not to rank small tweaks. I added the judge because
+the failure I care most about, an answer going beyond its source,
+passes every string check; the session 3 "Atlas does not write E&O"
+overstatement is one of its calibration probes. I decided that a
+qualifier the source doesn't state ("per occurrence" on a sublimit) is
+a failure, because it changes what the limit means. When the baseline
+showed the "not found" prefix landing mid-answer, I measured two fixes
+instead of assuming one. A stricter prompt (v1) changed nothing. Making
+status a structured JSON field (v2) fixed it by construction. I
+rejected a paragraph-moving heuristic because it would have
+misclassified partial answers.
+
+Results: baseline 86%, v1 76% (status unchanged at 92%), v2 90% with
+status correct on all 34 graded attempts and both unanswerable
+scenarios passing 3 of 3. v2 ships. Its overall gain over baseline is
+within noise; the status fix is not a statistical claim. The most
+common failure now is the agent adding claims beyond what it retrieved.
+In one case it stated the superseded $5M Tier 1 limit as current and
+cited v3 for it. The citation check and the judge caught that
+independently.
+
+Caught and fixed: reading every failure in the first baseline found
+that two of them were grader bugs, not agent bugs. The judge's output
+schema had silently lost its pass/fail constraint (the SDK's Zod helper
+and the Zod version in this project didn't agree), the judge couldn't
+see section headings, and the agent's own citation parser dropped
+citations written as `[doc §4, §3]`. I fixed all three, added
+calibration probes for each, and re-graded the stored answers instead
+of re-running the agent, so baseline, v1 and v2 are scored by the same
+grader. Separately, the judge passed the same "per occurrence" answer
+once and failed it once; writing the qualifier rule down made it
+consistent. Gap: Voyage's free tier makes a full run take about 25
+minutes, inflates latency, and caused occasional 300-second timeouts,
+which are logged as errors, not scored.
