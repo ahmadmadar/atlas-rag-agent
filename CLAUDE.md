@@ -95,7 +95,7 @@ Dated, specific engagement log entries, not vague summaries.
 
 ## Current build status
 
-Sessions 1-4 of six complete.
+Sessions 1-4 of six complete; session 5 in progress.
 
 - Session 1 (committed on main): fictional corpus (corpus/, 7
   documents, including a deliberately conflicting v2/v3 pair to
@@ -146,12 +146,33 @@ Sessions 1-4 of six complete.
   claims beyond retrieved text, sometimes stale v2 figures cited to v3
   (caught by grounding check + judge). Free Voyage tier causes
   occasional 300s timeouts (logged, not scored). `tsc` clean, 72 tests.
+- Session 5 (in progress, branch `feat/deploy-demo`): deploy + demo.
+  Done: `src/server.ts` + `src/http/` (plain node:http). `POST
+  /api/ask` streams NDJSON (one event per round via the agent's new
+  `onRound` hook, then the result). `GET /api/section` serves cited
+  section text; `GET /api/health`. Static page in `public/` (no
+  framework, strict CSP, fixed file allowlist): sample questions, live
+  round trace, status/grounding badges, citations open the source with
+  effective date and superseded badge. Tool error detail is stripped from
+  the browser trace. Limits: 5 questions/visitor/10 min and 2 concurrent
+  (in memory), 100/day global in the `DailyUsage` table (atomic
+  increment-with-cap, fails closed with 503). `render.yaml`: free web
+  service, migrations in the build command (free tier has no pre-deploy
+  step), DATABASE_URL external on Neon free tier (Render allows one free
+  Postgres per workspace, and it expires after 30 days). Note: importing
+  `@prisma/client` loads the repo `.env` itself, so an `env -i` boot test
+  doesn't exercise the guard; set vars to empty strings instead. `tsc`
+  clean, 88 tests.
+  Remaining: user merges PR, creates Neon project + Render Blueprint,
+  sets an Anthropic spend limit, seeds Neon; then live smoke test,
+  docs/demo-script.md, README (live link, screenshot, results up front),
+  and the portfolio re-score.
 
 Setup: `cp .env.example .env`, fill in `VOYAGE_API_KEY` and
 `ANTHROPIC_API_KEY`, then `npm run db:up && npm run db:migrate && npm
 run db:seed`.
 
-Remaining build order: deploy + demo script (session 5), docs + wrap
-(session 6). Candidate follow-up, not scheduled: reduce claims beyond
+Remaining build order: finish deploy + demo script (session 5), docs +
+wrap (session 6). Candidate follow-up, not scheduled: reduce claims beyond
 retrieved text, measured as the next eval variant (v3). POC scope. The session workflow above is
 in effect.

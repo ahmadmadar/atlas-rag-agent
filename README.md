@@ -54,27 +54,29 @@ npm run eval:judge-check                # confirms the claims judge on known ans
 
 ## Deploying
 
-The app runs on Render's free tier from [render.yaml](render.yaml): one
-web service and one Postgres instance. Free tier tradeoffs: the service
-sleeps after 15 minutes idle (the first request after that waits for a
-cold start), and the free database expires 30 days after creation.
+The web service runs on Render's free tier from
+[render.yaml](render.yaml), and the database is a free Neon Postgres
+project (pgvector is supported). I kept the database off Render because
+Render allows one free Postgres per workspace and expires it after 30
+days. Free tier tradeoff: the service sleeps after 15 minutes idle, so
+the first request after that waits for a cold start.
 
-1. In the Render dashboard, create a Blueprint from this repo. Enter
-   `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` when prompted.
-2. Each deploy builds the app and runs `prisma migrate deploy`, which
+1. Create a Neon project on Postgres 16 and copy its direct
+   (non-pooled) connection string. `prisma migrate` doesn't work through
+   the pooler.
+2. In the Render dashboard, create a Blueprint from this repo. Enter
+   `DATABASE_URL`, `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` when
+   prompted.
+3. Each deploy builds the app and runs `prisma migrate deploy`, which
    creates the tables and the pgvector extension the first time.
-3. Seed the hosted database once from your machine, using the
-   database's External Database URL from the Render dashboard:
+4. Seed the database once from your machine:
 
    ```bash
-   DATABASE_URL="<external database url>" npm run db:seed
+   DATABASE_URL="<neon connection string>" npm run db:seed
    ```
 
    A `DATABASE_URL` set on the command line takes precedence over the
    one in `.env`.
-
-When the free database expires, delete it in the dashboard, re-sync
-the Blueprint to create a new one, and repeat step 3.
 
 Pushes to `main` redeploy automatically. The public endpoint is capped
 at 5 questions per visitor per 10 minutes and 100 per day in total
