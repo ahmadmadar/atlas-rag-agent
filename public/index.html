@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Policy Assistant</title>
+  <meta name="description" content="Ask questions about Atlas Underwriting's policy and compliance documents. Every answer is cited, and questions the documents don't cover get an explicit not found.">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <p class="eyebrow">Atlas Underwriting <span class="pill">Demo, fictional carrier</span></p>
+      <h1>Policy Assistant</h1>
+      <p class="lede">
+        Answers questions from Atlas's underwriting, claims, and compliance documents.
+        Every claim cites the section it came from. If the documents don't cover a question,
+        it says so instead of guessing.
+      </p>
+    </header>
+
+    <section aria-labelledby="samples-label">
+      <p id="samples-label" class="label">Try one</p>
+      <div class="samples" id="samples"></div>
+    </section>
+
+    <form id="ask-form" class="ask" autocomplete="off">
+      <label for="question" class="sr-only">Your question</label>
+      <textarea id="question" name="question" rows="3" maxlength="500"
+        placeholder="e.g. How long do we keep a claim file if the claim was in litigation?"></textarea>
+      <div class="ask-row">
+        <span id="counter" class="counter">0 / 500</span>
+        <button type="submit" id="ask-button">Ask</button>
+      </div>
+    </form>
+
+    <section id="run" class="run" hidden aria-live="polite">
+      <div id="result" class="result" hidden>
+        <div class="badges" id="badges"></div>
+        <div class="answer" id="answer"></div>
+      </div>
+      <div id="error" class="error" role="alert" hidden></div>
+      <details id="trace-box" class="trace-box" open>
+        <summary>How it got there</summary>
+        <ol id="trace" class="trace"></ol>
+        <p id="progress" class="progress" hidden><span class="spinner" aria-hidden="true"></span><span id="progress-text"></span></p>
+      </details>
+    </section>
+
+    <footer class="footer">
+      <h2>How it works</h2>
+      <ul>
+        <li>A single agent with three tools: search the corpus, read a document section, list the documents.</li>
+        <li>It retrieves, checks whether the evidence is enough, and searches again if not. Capped at 3 rounds.</li>
+        <li>When two versions of a document conflict, the most recent effective date governs.</li>
+        <li>Citations are checked in code against the sections actually retrieved in that run.</li>
+      </ul>
+      <p class="fine">
+        Atlas Underwriting is fictional; the corpus is seven made-up documents.
+        <a href="https://github.com/ahmadmadar/atlas-rag-agent">Source, evals, and design notes on GitHub</a>.
+      </p>
+    </footer>
+  </main>
+
+  <dialog id="source" class="source" aria-labelledby="source-title">
+    <div class="source-head">
+      <div>
+        <p class="label" id="source-id"></p>
+        <h2 id="source-title"></h2>
+        <p class="source-meta" id="source-meta"></p>
+      </div>
+      <button type="button" class="close" id="source-close" aria-label="Close">×</button>
+    </div>
+    <div id="source-body" class="source-body"></div>
+  </dialog>
+</body>
+</html>

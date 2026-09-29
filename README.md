@@ -41,6 +41,9 @@ npm run ask -- "What is the maximum TIV a field underwriter can bind in a Tier 1
 `npm run ask` prints the answer, the tool calls from each round, and
 the citation check. Add `--json` for the full structured result.
 
+For the web page, run `npm run dev` and open http://localhost:3000
+(set `PORT` to use another port).
+
 To run the eval suite (12 scenarios x 3 runs, about $1.40 and 25
 minutes on Voyage's free tier):
 
@@ -48,6 +51,37 @@ minutes on Voyage's free tier):
 npm run eval -- --variant v3 --reps 3   # baseline, v1, v2 are recorded; each change gets the next vN
 npm run eval:judge-check                # confirms the claims judge on known answers
 ```
+
+## Deploying
+
+The app runs on Render's free tier from [render.yaml](render.yaml): one
+web service and one Postgres instance. Free tier tradeoffs: the service
+sleeps after 15 minutes idle (the first request after that waits for a
+cold start), and the free database expires 30 days after creation.
+
+1. In the Render dashboard, create a Blueprint from this repo. Enter
+   `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` when prompted.
+2. Each deploy builds the app and runs `prisma migrate deploy`, which
+   creates the tables and the pgvector extension the first time.
+3. Seed the hosted database once from your machine, using the
+   database's External Database URL from the Render dashboard:
+
+   ```bash
+   DATABASE_URL="<external database url>" npm run db:seed
+   ```
+
+   A `DATABASE_URL` set on the command line takes precedence over the
+   one in `.env`.
+
+When the free database expires, delete it in the dashboard, re-sync
+the Blueprint to create a new one, and repeat step 3.
+
+Pushes to `main` redeploy automatically. The public endpoint is capped
+at 5 questions per visitor per 10 minutes and 100 per day in total
+(see `src/http/limits.ts`). The daily count is stored in Postgres, so
+it holds when the free instance sleeps and restarts. For a hard stop
+regardless of the app, also set a monthly spend limit on the Anthropic
+account behind `ANTHROPIC_API_KEY`.
 
 ## Docs
 

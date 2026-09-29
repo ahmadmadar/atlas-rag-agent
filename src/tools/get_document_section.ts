@@ -25,6 +25,10 @@ export const getDocumentSectionTool = {
   },
 };
 
+// The document or section doesn't exist. Distinct from database failures so
+// the web server can answer 404 for a bad citation link and 500 otherwise.
+export class SectionNotFoundError extends Error {}
+
 // A section request matches the section itself and any subsection of it:
 // "2" matches "2", "2.1", "2.2" but not "20".
 export function matchesSection(sectionNumber: string | null, requested: string): boolean {
@@ -38,7 +42,7 @@ export async function getDocumentSection(input: z.infer<typeof GetSectionInput>)
   const authority = await loadAuthority([input.document_id]);
   const doc = authority.get(input.document_id);
   if (!doc) {
-    throw new Error(`Unknown document_id "${input.document_id}". Call list_documents for valid ids.`);
+    throw new SectionNotFoundError(`Unknown document_id "${input.document_id}". Call list_documents for valid ids.`);
   }
 
   const chunks = await getPrisma().chunk.findMany({
@@ -49,7 +53,7 @@ export async function getDocumentSection(input: z.infer<typeof GetSectionInput>)
   const matched = chunks.filter((c) => matchesSection(c.sectionNumber, requested));
   if (matched.length === 0) {
     const available = [...new Set(chunks.map((c) => sectionLabel(c.sectionNumber)))].join(", ");
-    throw new Error(`No section "${requested}" in ${input.document_id}. Available sections: ${available}.`);
+    throw new SectionNotFoundError(`No section "${requested}" in ${input.document_id}. Available sections: ${available}.`);
   }
 
   // Oversized sections are stored as several parts; stitch them back together.
