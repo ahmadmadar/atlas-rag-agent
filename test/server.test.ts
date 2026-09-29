@@ -2,8 +2,9 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentError, type AgentResult } from "../src/agent/agent.js";
-import { MAX_QUESTION_CHARS, createApp, type AskEvent, type RunAgent } from "../src/http/app.js";
-import { Limiter, type LimitConfig } from "../src/http/limits.js";
+import { MAX_QUESTION_CHARS, createApp, type AskEvent, type GetSection, type RunAgent } from "../src/http/app.js";
+import { SectionNotFoundError } from "../src/tools/get_document_section.js";
+import { Limiter, memoryDailyCounter, type DailyCounter, type LimitConfig } from "../src/http/limits.js";
 
 const loose: LimitConfig = { perClientMax: 100, perClientWindowMs: 60_000, dailyMax: 100, maxConcurrent: 10 };
 
@@ -32,8 +33,12 @@ const oneRound: RunAgent = async (question, deps) => {
 let server: Server | undefined;
 afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
 
-async function start(runAgent: RunAgent, limiter = new Limiter(loose), logs: unknown[] = []): Promise<string> {
-  server = createServer(createApp({ runAgent, limiter, log: (m, e) => logs.push([m, e]) }));
+const noSection: GetSection = async () => {
+  throw new Error("not stubbed");
+};
+
+async function start(runAgent: RunAgent, limiter = new Limiter(memoryDailyCounter(), loose), logs: unknown[] = [], getSection = noSection): Promise<string> {
+  server = createServer(createApp({ runAgent, limiter, getSection, log: (m, e) => logs.push([m, e]) }));
   await new Promise<void>((resolve) => server!.listen(0, resolve));
   return `http://localhost:${(server!.address() as AddressInfo).port}`;
 }
@@ -79,7 +84,7 @@ describe("HTTP app", () => {
   });
 
   it("returns 429 with Retry-After once a client is over its limit", async () => {
-    const base = await start(oneRound, new Limiter({ ...loose, perClientMax: 1 }));
+    const base = await start(oneRound, new Limiter(memoryDailyCounter(), { ...loose, perClientMax: 1 }));
     const headers = { "X-Forwarded-For": "203.0.113.7" };
 
     expect((await ask(base, { question: "q" }, headers)).status).toBe(200);
@@ -107,13 +112,58 @@ describe("HTTP app", () => {
     expect(logs).toHaveLength(2);
   });
 
+  it("refuses with 503 instead of running uncapped when the daily count is unavailable", async () => {
+    let runs = 0;
+    const down: DailyCounter = { tryIncrement: async () => Promise.reject(new Error("db down")) };
+    const base = await start(async (q, d) => (runs++, oneRound(q, d)), new Limiter(down, loose));
+    const res = await ask(base, { question: "q" });
+    expect(res.status).toBe(503);
+    expect(runs).toBe(0);
+  });
+
   it("releases the concurrency slot after a failed run", async () => {
     const base = await start(async () => {
       throw new Error("boom");
-    }, new Limiter({ ...loose, maxConcurrent: 1 }));
+    }, new Limiter(memoryDailyCounter(), { ...loose, maxConcurrent: 1 }));
 
     await (await ask(base, { question: "q" })).text();
     expect((await ask(base, { question: "q" })).status).toBe(200);
+  });
+
+  it("replaces tool error detail in the streamed trace with a generic message", async () => {
+    const base = await start(async (q, d) => {
+      const round = { round: 1, toolCalls: [{ name: "search_knowledge_base", input: {}, retrieved: [], error: "connect ECONNREFUSED 10.0.0.5:5432" }] };
+      d?.onRound?.(round);
+      return { ...fakeResult(q), trace: [round] };
+    });
+    const body = await (await ask(base, { question: "q" })).text();
+    expect(body).not.toContain("ECONNREFUSED");
+    expect(body).toContain("lookup returned an error");
+  });
+
+  it("serves the page with a strict CSP from a fixed file list", async () => {
+    const base = await start(oneRound);
+    const page = await fetch(`${base}/`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toMatch(/text\/html/);
+    expect(page.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(await page.text()).toContain("<title>Atlas Policy Assistant</title>");
+    expect((await fetch(`${base}/app.js`)).headers.get("content-type")).toMatch(/javascript/);
+    expect((await fetch(`${base}/..%2Fpackage.json`)).status).toBe(404);
+    expect((await fetch(`${base}/index.html`)).status).toBe(404);
+  });
+
+  it("returns cited section text, 404s unknown sections, and 400s missing params", async () => {
+    const getSection: GetSection = async ({ document_id, section }) => {
+      if (section === "9") throw new SectionNotFoundError(`No section "9" in ${document_id}.`);
+      return { result: { sections: [{ documentId: document_id, section, content: "text" }] }, retrieved: [] };
+    };
+    const base = await start(oneRound, undefined, [], getSection);
+
+    const ok = await fetch(`${base}/api/section?document_id=uw-guidelines-cp-v3&section=2.2`);
+    expect(await ok.json()).toEqual({ sections: [{ documentId: "uw-guidelines-cp-v3", section: "2.2", content: "text" }] });
+    expect((await fetch(`${base}/api/section?document_id=uw-guidelines-cp-v3&section=9`)).status).toBe(404);
+    expect((await fetch(`${base}/api/section?document_id=uw-guidelines-cp-v3`)).status).toBe(400);
   });
 
   it("serves health and 404s, and only accepts POST on /api/ask", async () => {
@@ -125,35 +175,48 @@ describe("HTTP app", () => {
 });
 
 describe("Limiter", () => {
-  it("enforces the per-client sliding window", () => {
+  it("doesn't charge a visitor's quota for a question the daily cap refused", async () => {
+    const limiter = new Limiter(memoryDailyCounter(), { ...loose, perClientMax: 1, dailyMax: 0 });
+    expect(await limiter.acquire("a")).toMatchObject({ reason: "daily" });
+    expect(await limiter.acquire("a")).toMatchObject({ reason: "daily" });
+  });
+
+  it("frees the slot and rethrows when the daily count can't be read", async () => {
+    const down: DailyCounter = { tryIncrement: async () => Promise.reject(new Error("db down")) };
+    const limiter = new Limiter(down, { ...loose, maxConcurrent: 1 });
+    await expect(limiter.acquire("a")).rejects.toThrow("db down");
+    await expect(limiter.acquire("a")).rejects.toThrow("db down"); // not "busy": the slot was released
+  });
+
+  it("enforces the per-client sliding window", async () => {
     let t = 0;
-    const limiter = new Limiter({ ...loose, perClientMax: 2, perClientWindowMs: 1000 }, () => t);
-    expect(limiter.acquire("a")).toBeNull();
+    const limiter = new Limiter(memoryDailyCounter(), { ...loose, perClientMax: 2, perClientWindowMs: 1000 }, () => t);
+    expect(await limiter.acquire("a")).toBeNull();
     limiter.release();
-    expect(limiter.acquire("a")).toBeNull();
+    expect(await limiter.acquire("a")).toBeNull();
     limiter.release();
-    expect(limiter.acquire("a")).toMatchObject({ reason: "client", retryAfterSec: 1 });
+    expect(await limiter.acquire("a")).toMatchObject({ reason: "client", retryAfterSec: 1 });
     t = 1001;
-    expect(limiter.acquire("a")).toBeNull();
+    expect(await limiter.acquire("a")).toBeNull();
   });
 
-  it("enforces the daily cap across clients and resets at UTC midnight", () => {
+  it("enforces the daily cap across clients and resets at UTC midnight", async () => {
     let t = Date.parse("2026-09-29T23:59:00Z");
-    const limiter = new Limiter({ ...loose, dailyMax: 2 }, () => t);
-    expect(limiter.acquire("a")).toBeNull();
-    expect(limiter.acquire("b")).toBeNull();
+    const limiter = new Limiter(memoryDailyCounter(), { ...loose, dailyMax: 2 }, () => t);
+    expect(await limiter.acquire("a")).toBeNull();
+    expect(await limiter.acquire("b")).toBeNull();
     limiter.release();
     limiter.release();
-    expect(limiter.acquire("c")).toEqual({ reason: "daily", retryAfterSec: 60 });
+    expect(await limiter.acquire("c")).toEqual({ reason: "daily", retryAfterSec: 60 });
     t = Date.parse("2026-09-30T00:00:01Z");
-    expect(limiter.acquire("c")).toBeNull();
+    expect(await limiter.acquire("c")).toBeNull();
   });
 
-  it("rejects when too many runs are in flight, without spending quota", () => {
-    const limiter = new Limiter({ ...loose, maxConcurrent: 1, dailyMax: 2 });
-    expect(limiter.acquire("a")).toBeNull();
-    expect(limiter.acquire("b")).toMatchObject({ reason: "busy" });
+  it("rejects when too many runs are in flight, without spending quota", async () => {
+    const limiter = new Limiter(memoryDailyCounter(), { ...loose, maxConcurrent: 1, dailyMax: 2 });
+    expect(await limiter.acquire("a")).toBeNull();
+    expect(await limiter.acquire("b")).toMatchObject({ reason: "busy" });
     limiter.release();
-    expect(limiter.acquire("b")).toBeNull();
+    expect(await limiter.acquire("b")).toBeNull();
   });
 });
