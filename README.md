@@ -89,7 +89,8 @@ account behind `ANTHROPIC_API_KEY`.
 
 - [Architecture](docs/architecture.md): the technical and business
   decisions behind the system
-- `docs/demo-script.md`: not yet written
+- [Demo script](docs/demo-script.md): the two-minute walkthrough I
+  use for recordings and live calls
 - [AI-assisted delivery log](docs/ai-assisted-delivery.md): what I
   generated vs. what required a decision, session by session
 
