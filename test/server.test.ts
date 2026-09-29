@@ -130,15 +130,17 @@ describe("HTTP app", () => {
     expect((await ask(base, { question: "q" })).status).toBe(200);
   });
 
-  it("replaces tool error detail in the streamed trace with a generic message", async () => {
+  it("replaces tool error detail in the streamed trace with a generic message, and logs it", async () => {
+    const logs: unknown[] = [];
     const base = await start(async (q, d) => {
       const round = { round: 1, toolCalls: [{ name: "search_knowledge_base", input: {}, retrieved: [], error: "connect ECONNREFUSED 10.0.0.5:5432" }] };
       d?.onRound?.(round);
       return { ...fakeResult(q), trace: [round] };
-    });
+    }, undefined, logs);
     const body = await (await ask(base, { question: "q" })).text();
     expect(body).not.toContain("ECONNREFUSED");
     expect(body).toContain("lookup returned an error");
+    expect(JSON.stringify(logs)).toContain("ECONNREFUSED");
   });
 
   it("serves the page with a strict CSP from a fixed file list", async () => {

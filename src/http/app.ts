@@ -123,7 +123,15 @@ export function createApp(deps: AppDeps = {}): RequestListener {
     const send = (event: AskEvent) => res.write(`${JSON.stringify(event)}\n`);
 
     try {
-      const result = await runAgent(body.data.question, { onRound: (round) => send({ type: "round", round: publicRound(round) }) });
+      const onRound = (round: RoundTrace) => {
+        // The browser gets a generic message for a failed lookup, so the
+        // detail has to land in the server log or it's lost.
+        for (const call of round.toolCalls) {
+          if (call.error) log(`Tool ${call.name} failed in round ${round.round}`, call.error);
+        }
+        send({ type: "round", round: publicRound(round) });
+      };
+      const result = await runAgent(body.data.question, { onRound });
       const { messages: _m, servedModels: _s, usage: _u, trace, ...rest } = result;
       send({ type: "result", result: { ...rest, trace: trace.map(publicRound), elapsedMs: now() - started } });
     } catch (err) {
