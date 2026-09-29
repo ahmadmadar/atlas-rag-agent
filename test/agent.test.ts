@@ -98,6 +98,13 @@ describe("runAgent", () => {
     expect(lastUserText(requests[3]!)).toMatch(/No tool calls left/);
   });
 
+  it("reports each completed round to onRound, with its retrieved sections", async () => {
+    const { createMessage } = scripted([toolTurn(search), toolTurn(search, search), textTurn("x [uw-guidelines-cp-v3 §2.2].")]);
+    const rounds: { round: number; calls: number }[] = [];
+    await runAgent("q", { createMessage, executeTool: v3Section, onRound: (r) => rounds.push({ round: r.round, calls: r.toolCalls.length }) });
+    expect(rounds).toEqual([{ round: 1, calls: 1 }, { round: 2, calls: 2 }]);
+  });
+
   it("counts parallel tool calls as one round and returns all results in one message", async () => {
     const { createMessage, requests } = scripted([
       toolTurn(search, { name: "list_documents", input: {} }, { name: "get_document_section", input: { document_id: "uw-guidelines-cp-v2", section: "2.2" } }),

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "db:up": "docker compose up -d",
     "db:migrate": "prisma migrate dev",

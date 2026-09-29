@@ -73,6 +73,9 @@ export interface AgentResult {
 export interface AgentDeps {
   createMessage?: CreateMessage;
   executeTool?: ToolExecutor;
+  // Called once per completed round, so a caller (the web server) can show
+  // progress during a run that takes several model turns.
+  onRound?: (round: RoundTrace) => void;
 }
 
 export class AgentError extends Error {}
@@ -167,6 +170,7 @@ export async function runAgent(question: string, deps: AgentDeps = {}): Promise<
       round.toolCalls.push(callTrace);
       retrieved.push(...callTrace.retrieved);
     }
+    deps.onRound?.(round);
     messages.push({
       role: "user",
       content: [...results.map(([, block]) => block), { type: "text", text: roundNotice(trace.length) }],
