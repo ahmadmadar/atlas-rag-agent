@@ -95,7 +95,7 @@ Dated, specific engagement log entries, not vague summaries.
 
 ## Current build status
 
-Sessions 1-5 of six complete.
+All six sessions complete. POC finished.
 
 - Session 1 (committed on main): fictional corpus (corpus/, 7
   documents, including a deliberately conflicting v2/v3 pair to
@@ -170,12 +170,27 @@ Sessions 1-5 of six complete.
   guard; set vars to empty strings instead. docs/demo-script.md (2-min
   walkthrough), README leads with live link, results table and
   screenshots in docs/images/. `tsc` clean, 88 tests.
+- Session 6 (2026-09-30, branch `docs/session-6-wrap`, one PR for all
+  docs per user preference): docs + wrap. docs/client-brief.md (problem,
+  what I built, measured results, what production would need). Four
+  Mermaid-rendered PNGs in docs/images/ (01 plain-language overview and
+  collapsed 02 technical architecture in the README "How it works"
+  section; 02 at the top of docs/architecture.md, 03 agent loop in the
+  loop section, 04 eval pipeline in the Evaluation section). Diagrams
+  1-3 were regenerated after review found three errors (cap shown as
+  always "not found", Voyage missing from the query path, a decision
+  diamond with two No exits). README: "Limits and what I'd do next"
+  section, Status marked complete, no demo video (user may add later).
+  docs/ai-assisted-delivery.md summary sections brought up to date
+  across all six sessions. Voyage stays on the free tier, documented as
+  a known limit. No code changes; `tsc` clean, 88 tests.
 
 Setup: `cp .env.example .env`, fill in `VOYAGE_API_KEY` and
 `ANTHROPIC_API_KEY`, then `npm run db:up && npm run db:migrate && npm
 run db:seed`.
 
-Remaining build order: docs + wrap (session 6: client brief,
-architecture diagram, final log entries, final portfolio re-score). Candidate follow-up, not scheduled: reduce claims beyond
-retrieved text, measured as the next eval variant (v3). POC scope. The session workflow above is
+Build order complete. Candidate follow-ups, not scheduled: reduce
+claims beyond retrieved text (retry on a failed citation check),
+measured as the next eval variant (v3); a demo video; a Voyage payment
+method to remove the 3 RPM stalls. POC scope. The session workflow above is
 in effect.

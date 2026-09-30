@@ -11,17 +11,24 @@ than vague summaries.
       the deliberate conflicts I needed to test the authority rule)
 - [x] Prisma schema + pgvector setup
 - [x] Ingestion pipeline (chunking, embedding calls)
-- [ ] Tool implementations (search_knowledge_base, get_document_section,
+- [x] Tool implementations (search_knowledge_base, get_document_section,
       list_documents)
-- [ ] Agent loop scaffolding
-- [ ] Eval scenarios first draft
+- [x] Agent loop scaffolding, citation parser and grounding check
+- [x] Eval scenarios first draft (expected answers checked by me
+      against the corpus text), the eval runner, and the claims judge
+- [x] HTTP server, static web page, rate limits and the Render Blueprint
+- [x] Unit tests (18 after session 2, 88 after session 5)
+- [x] First drafts of the README, demo script and client brief, which
+      I reviewed and edited
 
 ## What required architectural decisions (mine, not generated)
 
 - Document authority/staleness rule: I decided the most recent
   `effectiveDate` wins, with the `status` field as the fast path, and
   that superseded docs stay in the corpus for the audit trail rather
-  than being deleted. See docs/architecture.md.
+  than being deleted. I store the supersession link once, on the newer
+  document, so v2 and v3 can't disagree in the database. See
+  docs/architecture.md.
 - "Not found" threshold: I decided the agent judges topical
   responsiveness during its sufficiency-assessment step, rather than
   relying on a bare similarity-score cutoff. See docs/architecture.md.
@@ -30,8 +37,35 @@ than vague summaries.
   condition never get split across chunks, and so citations reference
   a section number an underwriter would recognize. See
   docs/architecture.md.
-- Single-agent vs. planner/orchestrator split: decided, with the
-  write-up deferred to session 6 per docs/architecture.md.
+- Single-agent vs. planner/orchestrator split: I kept one agent,
+  because the hardest step (deciding whether v2 or v3 governs) needs
+  both versions in the same context. I wrote down when I'd revisit it
+  in docs/architecture.md.
+- Hand-written loop over an SDK: I wrote the agent loop on the
+  Messages API instead of using the Claude Agent SDK, so the round cap
+  and the per-round trace the evals assert on live in my own code.
+- Round cap semantics: a round is one model turn, so parallel tool
+  calls cost one round, and I enforce the 3-round cap in code with
+  `tool_choice: "none"` rather than trusting the prompt.
+- Citation grounding: a fixed `[document_id §section]` format, checked
+  against the sections tools actually returned in that run, so a
+  citation to the right section in the wrong version fails.
+- Eval design: 12 scenarios at about ±13 points (POC scope), expected
+  answers from the corpus text, and a claims judge on a different model
+  (Opus 5) from the one under test. I decided an unstated qualifier
+  ("per occurrence" on a sublimit) counts as a failure.
+- Answer status as a structured field: when the "not found" prefix
+  landed mid-answer, I measured a stricter prompt (no change) against a
+  structured `{status, answer}` output (fixed by construction), and
+  rejected a paragraph-scanning heuristic that would have misclassified
+  partial answers.
+- Public endpoint limits: I required per-visitor, concurrency and daily
+  caps before deploying, with the daily count in Postgres so it
+  survives the free instance sleeping, and failing closed if it can't
+  be read.
+- Free tiers only: I chose free Render and Neon over paid plans, and
+  left Voyage on its free tier, documenting the cold start and
+  rate-limit stalls as known limits rather than paying to hide them.
 - I decided to skip a separate dashboard for this project (POC scope,
   per CLAUDE.md).
 
@@ -46,6 +80,45 @@ than vague summaries.
   glue between pieces, not the pieces themselves, and the only thing
   exercising this path is the unit tests, since no real corpus section
   comes close to the cap.
+- Session 3, embedding retry: the generated retry gave up after about
+  7 seconds, too short for Voyage's per-minute limit. The agent
+  recovered by switching tools, which hid the failure: the E&O run
+  never actually faced the trap it was meant to test. What that shows:
+  a run that looks like it passed can have skipped the thing it was
+  testing, so I read the trace, not just the answer.
+- Session 4, grader bugs: the judge's output schema silently lost its
+  pass/fail constraint (the SDK's Zod helper and this project's Zod
+  version didn't agree), the judge couldn't see section headings, and
+  the citation parser dropped citations written as `[doc §4, §3]`. Two
+  of the baseline's failures were these bugs, not the agent. What that
+  shows: generated grading code needs its own tests before its numbers
+  mean anything, which is why the judge now has 12 calibration probes.
+- Session 5, error leakage: the first server draft streamed raw tool
+  errors, which can carry database details, to the browser. Replacing
+  them with a generic message then left them logged nowhere, which the
+  live smoke test exposed. What that shows: generated code optimizes
+  for working, and what it exposes (or stops recording) needs a
+  deliberate review.
+- Session 5, secret in the conversation: Claude Code suggested seeding
+  the production database through the session's `!` prefix, which
+  would have put the database URL, password included, into the
+  conversation. I ran it in a separate terminal instead. What that
+  shows: an assistant with a terminal doesn't weigh where a secret
+  ends up unless I do.
+- Session 5, a boot test that couldn't fail: the fail-closed env check
+  passed with an empty environment only because importing Prisma's
+  client loads `.env` by itself. The guard was fine; the test wasn't
+  testing it. What that shows: a passing test needs a reason to
+  believe it could have failed.
+- Session 5, the product's own failure in prose: the first draft of the
+  demo script had me saying "Atlas doesn't write E&O", the same
+  overstatement the eval judge is calibrated to fail. What that shows:
+  the claims-beyond-the-source failure isn't specific to the agent, so
+  I check generated docs against the corpus the same way.
+- Smaller slips, all caught in review: corpus Markdown bold that would
+  have rendered as literal asterisks, a README edit that split the
+  Quickstart section, and a Neon config change that missed the PR it
+  belonged in.
 
 ## Engagement log
 
@@ -244,3 +317,54 @@ Verification:
   running the agent.
 - All four demo questions returned the right answer status with
   citations verified on the live deploy.
+
+**2026-09-30, Session 6: docs + wrap.** I finished the portfolio
+framing. There were no code changes. Claude Code drafted a client brief
+(docs/client-brief.md) written for Atlas's underwriting and compliance
+leads. It covers the problem (rules that change while old versions stay
+on file, and the cost of a confident wrong answer), what I built, the
+measured results, and what a production rollout would need. It also
+added a "Limits and what I'd do next" section to the README and marked
+the project complete. I generated four architecture diagrams in a
+separate chat from a prompt Claude Code wrote with the system's facts
+in it: a plain-language overview, the technical architecture, the
+agent loop, and the eval pipeline. Claude Code placed each one next to
+the decision it illustrates. Claude Code also added a "Path to
+production" section to docs/architecture.md, which covers SSO with
+access filtering in retrieval, an immutable audit trail, a document
+approval workflow, evals as a CI gate, observability, and
+infrastructure choices, with example tools named as common options
+rather than ones I've tested.
+
+Decisions I made: I left Voyage on its free tier and documented the
+rate-limit stalls as a known limit, rather than paying to hide them in
+a demo. I left out a demo video for now. I put all of the session's doc
+changes on one branch and PR, since splitting them into four gave a
+reviewer nothing extra. I put the plain-language diagram first in the
+README and collapsed the technical one, so a non-engineer sees how it
+works before seeing how it's built. I put the production plan in the
+architecture doc rather than the client brief, since its readers are
+technical and the brief's are not.
+
+Caught and fixed:
+
+- Claude Code checked the first set of diagrams against the code and
+  found three errors. The overview showed hitting the 3-round cap as
+  always meaning "not found", when the agent is actually forced to
+  answer with whatever it found. The architecture diagram left Voyage
+  off the query path, which hid where the free-tier stall comes from.
+  The agent loop diagram had a decision with two "No" exits and another
+  with only a "Yes". I regenerated all three with a corrected prompt,
+  and the second versions matched the code.
+- I noticed that the summary sections at the top of this log had
+  stopped after session 2. Three "generated" items were still unticked,
+  and the single-agent decision still said "deferred to session 6",
+  even though I wrote it up in session 3. They now cover all six
+  sessions. That includes the Claude Code mistakes that were only
+  recorded in the dated entries: the embedding retry that hid a skipped
+  test, the three grader bugs, raw tool errors sent to the browser, the
+  suggestion that would have put the database password into the
+  conversation, and the demo script line that repeated the "Atlas
+  doesn't write E&O" overstatement.
+- The README's Status line mentioned the architecture diagrams before
+  they existed. I kept it only because they landed in the same PR.
