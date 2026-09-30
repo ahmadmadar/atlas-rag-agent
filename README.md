@@ -7,7 +7,9 @@ says "not found" when the corpus doesn't support one.
 
 I built this using an AI-assisted delivery workflow (Claude Code). See
 [docs/ai-assisted-delivery.md](docs/ai-assisted-delivery.md) for what I
-generated vs. what I architected.
+generated vs. what I architected, and the
+[client brief](docs/client-brief.md) for the business problem it
+solves.
 
 **Try it live: [atlas-rag-agent.onrender.com](https://atlas-rag-agent.onrender.com)**
 
@@ -32,6 +34,23 @@ The [demo script](docs/demo-script.md) walks through what to look for.
   <img src="docs/images/trace.png" width="720" alt="Trace for the E&amp;O question: round 1 searches and lists the documents, round 2 reads the risk appetite statement sections 2 and 4, round 3 searches for professional liability appetite.">
 </p>
 </details>
+
+## How it works
+
+<p align="center">
+  <img src="docs/images/01-overview.png" width="460" alt="Diagram 1, plain-language overview: seven policy documents are split into sections and stored in a searchable knowledge base. When someone asks a question, the AI agent searches it and checks whether it found enough to answer, trying again if not. It drafts an answer with sources, or after 3 tries answers with what it found or says not found. Every citation is checked before the answer and its sources are shown.">
+</p>
+
+<details>
+<summary>Technical architecture</summary>
+<p align="center">
+  <img src="docs/images/02-technical-architecture.png" width="720" alt="Diagram 2, technical architecture: ingestion runs the corpus through a structural chunker and Voyage AI embeddings into Postgres with pgvector. At request time the browser calls POST /api/ask, which passes rate limits into the agent loop on Claude Sonnet 5. The agent's three tools embed the query with Voyage AI and read Postgres, and the server streams an NDJSON response back to the browser.">
+</p>
+</details>
+
+The agent loop (Diagram 3) and the eval pipeline (Diagram 4) are in
+[docs/architecture.md](docs/architecture.md), next to the decisions
+they illustrate.
 
 ## Results
 
@@ -129,8 +148,29 @@ it holds when the free instance sleeps and restarts. For a hard stop
 regardless of the app, also set a monthly spend limit on the Anthropic
 account behind `ANTHROPIC_API_KEY`.
 
+## Limits and what I'd do next
+
+- **Answers that go beyond their sources.** The most common remaining
+  eval failure is a detail the cited sections don't state. The citation
+  check and the judge catch it, but nothing corrects it yet. Next I'd
+  retry when the citation check fails and measure that as eval variant
+  v3.
+- **Eval size.** 12 scenarios x 3 runs gives about ±13 points, enough
+  to catch a broken behavior but not to rank small changes. A real
+  rollout needs a larger set built from actual underwriter questions.
+- **Free-tier latency.** Typical answers take 6 to 14 seconds, but
+  Voyage's free tier allows 3 requests per minute, so back-to-back
+  questions can stall a round for up to 35 seconds. Adding a Voyage
+  payment method removes that.
+- **POC scope.** No sign-in, per-role document access or audit log.
+  The [client brief](docs/client-brief.md) lists what a production
+  rollout would need.
+
 ## Docs
 
+- [Client brief](docs/client-brief.md): the problem, what I built, and
+  what a production rollout would need, written for Atlas's
+  underwriting and compliance leads
 - [Architecture](docs/architecture.md): the technical and business
   decisions behind the system
 - [Demo script](docs/demo-script.md): the two-minute walkthrough I
@@ -140,8 +180,9 @@ account behind `ANTHROPIC_API_KEY`.
 
 ## Status
 
-I've completed five of a planned six sessions: the fictional corpus and
+Complete as a POC, built over six sessions: the fictional corpus and
 decisions doc, the ingestion pipeline (Voyage embeddings in pgvector),
 the agent with its three tools, 3-round cap and citation check, the
-eval suite, and the deployed web app with its demo script. The last
-session is documentation and wrap-up.
+eval suite, the deployed web app with its demo script, and the client
+brief and architecture diagrams. The
+[engagement log](docs/ai-assisted-delivery.md) covers each session.

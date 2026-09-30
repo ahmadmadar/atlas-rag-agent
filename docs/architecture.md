@@ -6,6 +6,10 @@ calls I had to make deliberately, and why I made them. I add sections
 as each build session reaches the decision it covers. See
 docs/ai-assisted-delivery.md for the session-by-session log.
 
+<p align="center">
+  <img src="images/02-technical-architecture.png" width="720" alt="Diagram 2, technical architecture: ingestion runs the corpus through a structural chunker and Voyage AI embeddings into Postgres with pgvector. At request time the browser calls POST /api/ask, which passes rate limits into the agent loop on Claude Sonnet 5. The agent's three tools embed the query with Voyage AI and read Postgres, and the server streams an NDJSON response back to the browser.">
+</p>
+
 ## Scope tradeoff
 
 I built this as a portfolio POC, not a hardened production system. It
@@ -17,6 +21,72 @@ build the operational hardening a production carrier system would need:
 auth, multi-tenant isolation, full audit logging, horizontal scaling.
 Where that tradeoff matters for a specific decision below, I call it
 out.
+
+## Path to production
+
+I haven't built any of this. It's how I'd take the POC to production at
+a carrier like Atlas, closing the gaps listed above. The tools I name
+are ones enterprises commonly use, as examples, not choices I've tested
+here.
+
+**Identity and document access.** Sign-in through the carrier's SSO
+(typically Okta or Microsoft Entra ID), with roles mapped from its
+directory groups. Access control belongs in retrieval, not in the
+answer: each chunk would carry the roles allowed to read it, and
+`search_knowledge_base` and `get_document_section` would filter on the
+caller's roles in the SQL query itself. Filtering the answer afterward
+is too late, because the model has already read the restricted text.
+Per-user rate limits would replace the per-visitor ones.
+
+**Audit trail.** Every question stored with the user, the sections each
+round retrieved, the final answer, its citations, the grounding result
+and the model version. The agent already produces this as its round
+trace, so the work is storing it immutably: an append-only Postgres
+table with no update or delete grants, or S3 with Object Lock. How long
+to keep it is a compliance decision, and Atlas's own data retention
+policy would be the starting point. This is what answers "why did the
+assistant tell the underwriter that?" months later.
+
+**Document lifecycle.** Documents ingested from the system of record
+(SharePoint, Confluence, or a document management system like iManage)
+instead of a folder in the repo. Publishing a new version would require
+an effective date and the version it replaces, plus a compliance
+approval before it becomes searchable. The data model already enforces
+a consistent supersession link, and the seed already re-embeds only
+changed documents, so this is mostly a connector and an approval step.
+
+**Evals as a release gate.** A larger scenario set drawn from real
+underwriter questions, run in CI (for example GitHub Actions) on every
+prompt, model or retrieval change, failing the build if answer-status
+accuracy or grounding drops. In production, a daily sample of live
+answers would go through the same claims judge. Tools like Langfuse,
+Braintrust or LangSmith store the traces, datasets and scores so
+versions can be compared.
+
+**Observability.** OpenTelemetry traces per question, one span per
+round and tool call, exported to Datadog or Grafana. Beyond latency and
+errors, the metrics that matter here are quality signals: grounding
+failure rate, "not found" rate, rounds per question and token cost per
+answer. A rising "not found" rate usually points to a document gap, not
+a model problem.
+
+**Infrastructure and vendors.**
+- Managed Postgres with pgvector (AWS RDS or Aurora), adding an HNSW
+  index once the corpus reaches a few thousand chunks. An exact scan is
+  the right call at 46.
+- A paid Voyage tier, which removes the 3-requests-per-minute stalls.
+- Claude through AWS Bedrock or Google Vertex AI if the carrier wants
+  its existing cloud agreement or regional data residency, and the
+  direct API otherwise.
+- Secrets in AWS Secrets Manager or HashiCorp Vault, keeping the
+  fail-closed env guard.
+- Containers on AWS ECS/Fargate or Kubernetes, behind the carrier's API
+  gateway.
+
+**What wouldn't change.** The single agent, the 3-round cap, the
+citation grounding check and the authority rule hold at production
+scale. I'd revisit the single agent only under the conditions in
+"Single-agent vs. planner/orchestrator split" below.
 
 ## Document authority & staleness rule
 
@@ -165,6 +235,10 @@ request sets `tool_choice: "none"`, so the model can't call another
 tool even if it tries, and has to answer from what it has or say the
 corpus doesn't fully cover the question.
 
+<p align="center">
+  <img src="images/03-agent-loop.png" width="360" alt="Diagram 3, the agent loop: each round is one Claude Sonnet 5 turn whose tool calls count as one round, followed by the tool results and a round notice. If the evidence is enough, the agent writes its final answer. If not and fewer than 3 rounds are used, it starts the next round; after 3 rounds a final turn is forced with tool_choice none. The final answer is JSON with status and answer, and passes the citation grounding check before the result is returned.">
+</p>
+
 **Why a round and not a tool call:** Counting individual calls would
 penalize exactly the behavior I want, like fetching both versions of a
 section at once to compare them. Counting rounds matches the actual
@@ -265,6 +339,10 @@ the real `runAgent()` entry point (`npm run eval`).
   cites, plus a per-scenario note on what counts as failing, and fails
   any claim the cited text doesn't support, including qualifiers the
   text doesn't state ("per occurrence" on a sublimit)
+
+<p align="center">
+  <img src="images/04-evaluation-pipeline.png" width="560" alt="Diagram 4, evaluation pipeline: 12 scenarios x 3 runs call runAgent, the same entry point as the live system. Each answer goes through code checks (status, key facts, citations, grounding) and a Claude Opus 5 claims judge, and results are written to evals/runs.">
+</p>
 
 The code checks exist because they're exact and free. The judge exists
 because the most important failure here, an answer that goes beyond its
