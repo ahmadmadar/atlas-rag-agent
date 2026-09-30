@@ -179,3 +179,68 @@ once and failed it once; writing the qualifier rule down made it
 consistent. Gap: Voyage's free tier makes a full run take about 25
 minutes, inflates latency, and caused occasional 300-second timeouts,
 which are logged as errors, not scored.
+
+**2026-09-29, Session 5: deploy and demo.** I took the agent from a CLI
+to a public web demo at atlas-rag-agent.onrender.com. Claude Code
+generated the HTTP server (plain `node:http`), the static page, the
+Render Blueprint, the demo script, and tests (72 to 88). The agent loop
+is unchanged apart from an `onRound` callback, which lets the server
+stream each round to the browser as it finishes. Citations on the page
+open the cited section's source text with its effective date and a
+superseded badge. Clicking a v2 citation shows the authority rule on
+screen.
+
+Decisions I made: a public endpoint spends my API budget, so I required
+limits before deploying. The limits are 5 questions per visitor per 10
+minutes, 2 runs at once, and 100 questions a day in total, plus a
+monthly spend limit on the Anthropic account as the hard stop. I chose
+free tiers over about $13/month in paid plans because this is a POC,
+and I made each consequence an explicit decision:
+
+- Render's free instance sleeps when idle, which would reset an
+  in-memory counter. So the daily cap lives in Postgres, as one SQL
+  statement that checks and increments, and it refuses questions if the
+  count can't be read.
+- Render allows one free Postgres per workspace, which my other project
+  uses, and expires it after 30 days. So the database is on Neon's free
+  tier.
+- Free instances have no pre-deploy step, so migrations run in the
+  build.
+
+I haven't added a Voyage payment method yet. The live smoke test showed
+what that costs: when questions come back to back, the 3-per-minute
+embedding limit can stall a round for up to 35 seconds. The agent
+recovered by reading sections directly, but one answer took 50 seconds.
+
+Caught and fixed:
+
+- A boot test with an empty environment passed the fail-closed key
+  check. The cause was that importing Prisma's generated client loads
+  the repo's `.env` by itself; the guard was fine, the test wasn't.
+- Raw tool errors, which can carry database details, were streamed to
+  the browser. I replaced them with a generic message. The live smoke
+  test then showed the detail wasn't logged anywhere either, so I
+  couldn't diagnose the rate-limit failures from Render's logs. Failed
+  tool calls are now logged on the server.
+- Corpus Markdown bold would have rendered as literal asterisks.
+- A README edit had split the Quickstart section.
+- The Neon change missed the PR it belonged in. I caught it before
+  creating the Blueprint, which would otherwise have tried to create a
+  second free Render database.
+
+Claude Code got two things wrong that I caught:
+
+- It suggested seeding through the session's `!` prefix, which would
+  have put the database URL, password included, into the conversation.
+  I ran it in a separate terminal with a hidden prompt instead.
+- The first draft of the demo script had me saying "Atlas doesn't write
+  E&O". That's the same overstatement the eval judge is calibrated to
+  fail: the documents only show that E&O isn't covered.
+
+Verification:
+
+- 20 simultaneous increments against a cap of 3 let exactly 3 through.
+- With the day marked full, the live server returned 429 without
+  running the agent.
+- All four demo questions returned the right answer status with
+  citations verified on the live deploy.
