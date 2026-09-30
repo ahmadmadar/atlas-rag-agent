@@ -9,6 +9,50 @@ I built this using an AI-assisted delivery workflow (Claude Code). See
 [docs/ai-assisted-delivery.md](docs/ai-assisted-delivery.md) for what I
 generated vs. what I architected.
 
+**Try it live: [atlas-rag-agent.onrender.com](https://atlas-rag-agent.onrender.com)**
+
+The page has four sample questions. Each one streams the agent's
+rounds as they happen, and every citation opens the source section with
+its effective date and whether it's been superseded. It runs on free
+tiers, so the first request after 15 idle minutes waits for a cold
+start, and there's a limit of 5 questions per visitor per 10 minutes.
+The [demo script](docs/demo-script.md) walks through what to look for.
+
+<p align="center">
+  <img src="docs/images/answer.png" width="720" alt="The Policy Assistant answering the Tier 1 coastal binding question: badges show Answered from the documents, Citations verified, and 2 of 3 rounds. The answer gives the current 8 million limit from v3 and names the superseded v2 5 million limit, with a citation chip after each claim.">
+</p>
+
+| Every citation opens its source | Not found, instead of a guess |
+|---|---|
+| <img src="docs/images/source.png" alt="Source dialog for uw-guidelines-cp-v2 section 2.2, version 2.0, effective 2023-03-01, with a Superseded by uw-guidelines-cp-v3 badge above the 5 million limit text."> | <img src="docs/images/not-found.png" alt="The E&amp;O question answered with a Not found in the documents badge after 3 of 3 rounds, explaining that the only E&amp;O figure in the corpus is the producers' own coverage requirement."> |
+
+<details>
+<summary>The round-by-round trace behind the not-found answer</summary>
+<p align="center">
+  <img src="docs/images/trace.png" width="720" alt="Trace for the E&amp;O question: round 1 searches and lists the documents, round 2 reads the risk appetite statement sections 2 and 4, round 3 searches for professional liability appetite.">
+</p>
+</details>
+
+## Results
+
+I measured the agent with a 12-scenario eval (lookups, conflicting
+document versions, multi-hop questions, and questions the documents
+can't answer), 3 runs each, graded by code checks plus a Claude Opus
+claims judge:
+
+| Version | Change | Pass rate | Answer status correct |
+|---|---|---|---|
+| baseline | first working agent | 86% ±13 | 92% |
+| v1 | stricter prompt | 76% ±15 | 92% |
+| v2 (shipped) | answer status as a structured field | 90% ±13 | 100% |
+
+The stricter prompt didn't fix the status errors; changing the output
+format did. The most common remaining failure is the agent adding a
+claim beyond what it retrieved, which the citation check and the judge
+both catch. The evaluation section of
+[docs/architecture.md](docs/architecture.md) has the details and the
+limits of a 12-scenario suite.
+
 ## What this demonstrates
 
 - **Agentic retrieval**, not single-pass RAG: an iterative
@@ -96,16 +140,8 @@ account behind `ANTHROPIC_API_KEY`.
 
 ## Status
 
-I've completed sessions 1-4 of a planned six-session build: the
-fictional corpus and decisions doc, the ingestion pipeline (Voyage
-embeddings in pgvector), the agent with its three tools, 3-round cap
-and citation check, and an eval suite that measured it. The current
-agent passes 90% (±13) of 12 scenarios across 3 runs each, with answer
-status correct on every graded attempt; the evaluation section of
-docs/architecture.md has the numbers and what they do and don't show.
-I haven't yet built the deployment or demo script.
-
-## Live links
-
-- Deployed URL: _TBD_
-- Demo video / screenshot: _TBD_
+I've completed five of a planned six sessions: the fictional corpus and
+decisions doc, the ingestion pipeline (Voyage embeddings in pgvector),
+the agent with its three tools, 3-round cap and citation check, the
+eval suite, and the deployed web app with its demo script. The last
+session is documentation and wrap-up.
